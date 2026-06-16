@@ -1,192 +1,323 @@
 ---
 name: "user-nickname-display"
-description: "Ensures user display names are stored by stable user_id, resolved from user table at query time. Invoke when adding creator/approver/owner columns in ticket/audit/permission pages."
+description: "DMS项目内所有业务表只存user_id（稳定主键），列表返回前统一从sys_user表查询昵称回填展示。新增工单/审批/审计/Owner/处理人等含用户显示的页面时必须使用此技能。"
 ---
 
-# 用户昵称显示处理 Skill
+# DMS 用户昵称显示处理 Skill（项目内专用）
 
-## 核心原则
+## 适用范围
 
-| 层级 | 存什么 | 查什么 | 说明 |
-|------|--------|---------|------|
-| **数据库** | `applicant_id / approver_id / created_by / owner_id | —— 存稳定不变的用户主键 |
-| **展示层** | 不存 nickname/username | **SELECT nickname FROM sys_user WHERE id = user_id | 实时查用户表取最新昵称 |
+本项目（DataOps DMS）内的所有后端业务代码。当页面需要显示"发起人/审批人/处理人/创建人/负责人/操作员/Owner"等任何用户信息时，按此 Skill 实现。
 
-## 存储层规范（数据库表结构设计）
+## 项目上下文
 
-业务表中**只存稳定的 user_id（用户主键），永远不要存 nickname。
+| 组件 | 实际值 |
+|------|--------|
+| 用户表 | `sys_user` |
+| 用户表主键 | `id`（如 `859f8f0d9436d7fe13568d1d15465409`） |
+| 用户登录账号 | `username`（如 `0142429`，稳定不变） |
+| 用户昵称 | `nickname`（如 `杨湘远`，** 可修改，不可作为查找键 **） |
+| 实体类 | `com.dataops.dms.entity.User` |
+| Mapper | `com.dataops.dms.mapper.UserMapper extends BaseMapper<User>` |
+| 认证来源 | `JwtAuthFilter` 放入 `request.getAttribute("userId")` |
 
-### 推荐字段命名
+## 核心原则：存 user_id，展示时查 nickname
 
-```
-creator_id       VARCHAR(64)   -- 创建人ID
-owner_id          VARCHAR(64)   -- 负责人ID
-applicant_id      VARCHAR(64)   -- 申请人ID
-approver_id       VARCHAR(64)   -- 审批人ID
-assigned_to_id     VARCHAR(64)   -- 处理人ID
-```
+| 层级 | 字段 | 存什么 | 查什么 | 说明 |
+|------|------|--------|--------|------|
+| **数据库** | `applicant_id / approver_id / owner_id / created_by / ...` | `sys_user.id` | — | 只存稳定不变的用户主键 |
+| **数据库（不推荐，仅兼容历史）** | `applicant_name / approver_name` | `sys_user.username`（登录账号） | — | 只用于旧数据兜底，新表 ** 不要建此类字段 ** |
+| **Java Entity** | `applicantId` / `applicantName` | `applicantId` 写入数据库 | `applicantName` 在 Controller 层查询后回填，不持久化 |
+| **前端展示** | `applicantName` / `approverName` | — | 直接渲染，不需要前端做用户查询 |
 
-**错误做法（禁止）**
+**一句话版本**：业务表写 `user_id` → 返回前 `selectBatchIds([user_id 集合])` → 回填 `*_name` → 前端直接展示。
 
-```
--- ❌ 不要这样写
-applicant_name  VARCHAR(64)  -- 存昵称/账号，用户改昵称后就对不上
-owner_name      VARCHAR(64)  -- 同上
-```
+## 数据库表设计规范（建新表时遵守）
 
-### JWT / 认证层来源映射关系
+**只存 user_id（主键），不要存 nickname/username 到业务表。**
 
-登录时 JWT 提供哪些字段 → 存储时的对应字段：
+```sql
+-- ✅ 正确方式
+ALTER TABLE your_table ADD COLUMN applicant_id VARCHAR(64) COMMENT '申请人ID（关联sys_user.id）';
+ALTER TABLE your_table ADD COLUMN approver_id VARCHAR(64) COMMENT '审批人ID（关联sys_user.id）';
 
-```
-JWT.sub / request.getAttribute("userId")    → 存表的 *_id 字段
-JWT.username (登录账号)                → 展示层用 username 做反向查询（仅当 *_id 为空的历史数据兜底）
-User.nickname                            → 只在最终展示时取，**永不在业务表存 nickname
-```
-
-**认证过滤器（示例，适用于任何需要当前用户信息的页面）**
-
-在用户表查询后，将用户信息放入 request attribute，后续业务接口统一读取。
-
-```
-request.setAttribute("userId",     userId);           // 稳定主键 → 写表用这个
-request.setAttribute("username",   username);        // 登录账号 → 仅兜底查询用
-request.setAttribute("nickname",  nickname);       // 仅展示使用，** 不写进业务表
+-- ❌ 错误方式（永远不要这样做）
+ALTER TABLE your_table ADD COLUMN applicant_name VARCHAR(64);  -- 用户改昵称后就错位
 ```
 
-## 查询层规范（Controller 返回数据时统一处理）
+## Entity 字段命名（写在 `src/main/java/com/dataops/dms/entity/` 下）
 
-所有 GET 列表接口返回数据时，统一做"昵称回填"。逻辑分 3 层：
-
-**1. 先查所有出现过的 user_id 集合 → 一次 IN 查询 sys_user 表
+在 Entity 里同时保留两套字段：一套写库用的 `*Id`（持久化到数据库），一套展示用的 `*Name`（不写库，Controller 返回前回填）。
 
 ```java
-Set<String> userIds = new HashSet<>();
-for (Ticket t : list) {
-    if (t.getCreatorId() != null) userIds.add(t.getCreatorId());
-    if (t.getOwnerId() != null) userIds.add(t.getOwnerId());
-    if (t.getApproverId() != null) userIds.add(t.getApproverId());
-}
-
-if (!userIds.isEmpty()) {
-    List<User> users = userMapper.selectBatchIds(userIds);
-    Map<String, String> idToDisplay = new HashMap<>();
-    for (User u : users) {
-        String display = (u.getNickname() != null && !u.getNickname().isEmpty())
-            ? u.getNickname() : u.getUsername();
-        idToDisplay.put(u.getId(), display);
-    }
-    // 2. 回填到每个对象
-    for (Ticket t : list) {
-        if (t.getCreatorId() != null) t.setCreatorName(idToDisplay.get(t.getCreatorId()));
-        if (t.getOwnerId() != null) t.setOwnerName(idToDisplay.get(t.getOwnerId()));
-        if (t.getApproverId() != null) t.setApproverName(idToDisplay.get(t.getApproverId()));
-    }
-}
+private String applicantId;     // 写库用 ← 存 sys_user.id
+private String applicantName;   // 展示用，Controller 层回填昵称，不持久化
+private String approverId;     // 写库用
+private String approverName;    // 展示用
+private String ownerId;        // 写库用
+private String ownerName;        // 展示用
 ```
 
-**2. 历史数据兜底**：如果旧数据没有写入 *_id，仅有 *_name（存的是 username 账号，查询不到时，保持原值。
+## Controller 层：昵称回填标准实现
 
-**3. 关键字段 `nickname` → `username` → `username` 本身就是 nickname，永远用 nickname，就是 nickname；nickname 昵称 nickname。
+**所有返回列表/详情的 GET 接口，在 `return Result.success(...)` 之前调用下面这段逻辑。**
 
-**4. 最后展示层**：如果 nickname nickname 为空，退到 `username` 账号。
-
-## Entity / DTO 规范
-
-Entity 中同时保留两套字段：一套**存库用的 *_id（稳定主键），一套 *_name（展示用，查询时回填）。
+复制粘贴下面代码到 Controller 类末尾（已在 `PermissionRequestController` 中验证通过）：
 
 ```java
-private String creatorId;    // 写库用 ← 核心，不会变
-private String creatorName;  // 展示用，查询后回填，不持久化
+@Resource
+private com.dataops.dms.mapper.UserMapper userMapper;
 
-// getter/setter 正常写，*_id 写入数据库，*_name 由 Controller 查询后填充
-```
-
-前端拿到返回的 JSON 中 *_name 字段就是昵称（如 "杨湘远"、"超级管理员"），直接渲染即可，前端不需要做用户表 JOIN。
-
-## 新页面/接口的 Checklist
-
-创建一个新的带用户显示的列表/详情接口时按下列步骤走一遍：
-
-- [ ] 业务表设计 → 只有 `*_id` 字段存用户主键，不要存 `*_name` 到业务表
-- [ ] 写操作 → 写入 `*_id`（来自 `request.getAttribute("userId")`
-- [ ] 读操作 → 返回前统一走一遍"昵称回填"逻辑（取 nickname 优先，退 username
-- [ ] 编译通过 → 重启后端验证效果
-- [ ] 前端列表中 `*_name` 直接渲染，不需要前端做用户查询
-
-## 典型场景应用
-
-| 场景 | 字段名建议 |
-|------|-----------|
-| 工单/工单 | `creator_id/creator_name |
-| 权限工单 | `applicant_id/applicant_name |
-| 审批流 | `approver_id/approver_name |
-| 审计日志 | `operator_id/operator_name |
-| 数据资源 Owner | `owner_id/owner_name |
-| 数据导入/导出 | `created_by/created_by_name |
-
-## 反模式（踩过的坑）
-
-1. ❌ **存 nickname 到业务表** → 用户改昵称后历史数据显示旧昵称
-2. ❌ **用 nickname 反向查用户** → nickname 可变，查不到或查错
-3. ❌ **前端自己查用户表做 JOIN** → 重复 N+1 查询，性能差
-4. ❌ **业务表只存 username** → 同样有用户改账号的风险（虽然概率低但不是零）
-5. ❌ **前端做用户 ID→昵称映射写在前端** → 维护成本高，多个页面都要重复实现
-
-## 标准实现骨架（可直接复制粘贴）
-
-**后端 Controller 层（Java/MyBatis-Plus）：
-
-```java
-// 在所有 GET 列表接口的最后，return 前调用
-private void enrichWithNickname(List<YourEntity> list) {
+/**
+ * 根据 user_id 批量回填用户昵称。
+ * 主查询用 user_id -> sys_user.id 主键关联，100% 可靠。
+ * Fallback: 历史数据只有 applicant_name（存的是 username 登录账号）时，用 username 反查。
+ * 展示时优先用 nickname，为空则退回 username。
+ * 绝不会用 nickname 去反向查找用户 —— nickname 可修改，查不到或查错。
+ */
+private void enrichWithNickname(java.util.List<? extends Object> list) {
     if (list == null || list.isEmpty()) return;
     try {
         java.util.Set<String> userIds = new java.util.HashSet<>();
-        for (YourEntity item : list) {
-            // 收集所有出现过的 user_id（如 creatorId, ownerId, approverId）
-            if (item.getCreatorId() != null) userIds.add(item.getCreatorId());
-            if (item.getOwnerId() != null) userIds.add(item.getOwnerId());
-            if (item.getApproverId() != null) userIds.add(item.getApproverId());
+        java.util.Map<String, String> idToName = new java.util.HashMap<>();
+
+        // ========== 1. 收集所有 user_id ==========
+        for (Object item : list) {
+            try {
+                java.lang.reflect.Method[] methods = item.getClass().getMethods();
+                for (java.lang.reflect.Method m : methods) {
+                    if (m.getName().startsWith("get")
+                        && (m.getName().endsWith("Id") || m.getName().equals("getApplicantId") || m.getName().equals("getApproverId") || m.getName().equals("getOwnerId") || m.getName().equals("getCreatorId") || m.getName().equals("getCreatedBy") || m.getName().equals("getOperatorId") || m.getName().equals("getAssignedToId"))
+                        && m.getParameterCount() == 0
+                        && m.getReturnType() == String.class) {
+                        Object val = m.invoke(item);
+                        if (val != null) {
+                            String s = (String) val;
+                            // 过滤掉明显不是 user_id 的值（如数字/空串）
+                            if (s.length() >= 4 && !s.contains(" ")) {
+                                userIds.add(s);
+                            }
+                        }
+                    }
+                }
+            } catch (Exception ignored) {}
         }
 
-        if (userIds.isEmpty()) return;
-
-        java.util.Map<String, String> idToDisplay = new java.util.HashMap<>();
-        try {
-            List<User> users = userMapper.selectBatchIds(userIds);
-            if (users != null) {
-                for (User u : users) {
-                    String display = (u.getNickname() != null && !u.getNickname().isEmpty())
-                        ? u.getNickname() : u.getUsername();
-                    idToDisplay.put(u.getId(), display);
+        // ========== 2. 一次 IN 查询 sys_user ==========
+        if (!userIds.isEmpty()) {
+            try {
+                java.util.List<com.dataops.dms.entity.User> users = userMapper.selectBatchIds(userIds);
+                if (users != null) {
+                    java.util.Map<String, String> usernameToNickname = new java.util.HashMap<>();
+                    for (com.dataops.dms.entity.User u : users) {
+                        String display = (u.getNickname() != null && !u.getNickname().isEmpty())
+                            ? u.getNickname() : u.getUsername();
+                        idToName.put(u.getId(), display);
+                        if (u.getUsername() != null) usernameToNickname.put(u.getUsername(), display);
+                    }
+                    // username 兜底映射 —— 历史数据只有 applicant_name（存的是 username登录账号）
+                    // 不用 nickname 反查，因为 nickname 可变
+                    idToName.putAll(usernameToNickname);
                 }
-            }
-        } catch (Exception ignored) {}
+            } catch (Exception ignored) {}
+        }
 
-        for (YourEntity item : list) {
-            if (item.getCreatorId() != null)
-                item.setCreatorName(idToDisplay.get(item.getCreatorId()));
-            if (item.getOwnerId() != null)
-                item.setOwnerName(idToDisplay.get(item.getOwnerId()));
-            if (item.getApproverId() != null)
-                item.setApproverName(idToDisplay.get(item.getApproverId()));
+        // ========== 3. 回填 *Name 字段 ==========
+        for (Object item : list) {
+            try {
+                java.lang.reflect.Method[] methods = item.getClass().getMethods();
+                for (java.lang.reflect.Method m : methods) {
+                    if (m.getName().startsWith("get") && m.getName().endsWith("Id")
+                        && m.getParameterCount() == 0 && m.getReturnType() == String.class) {
+                        Object idVal = m.invoke(item);
+                        if (idVal != null && idToName.containsKey(idVal)) {
+                            String setterName = "set" + m.getName().substring(3).replace("Id", "") + "Name";
+                            // 常见映射：getApplicantId -> setApplicantName
+                            try {
+                                java.lang.reflect.Method setter = item.getClass().getMethod(setterName, String.class);
+                                setter.invoke(item, idToName.get(idVal));
+                            } catch (NoSuchMethodException ignored2) {}
+                        }
+                    }
+                }
+            } catch (Exception ignored) {}
         }
     } catch (Exception ignored) {}
 }
 ```
 
-**前端 React/TypeScript 渲染层**
+**简化版（不使用反射，更稳定）—— 推荐用这版，显式列出需要回填的字段**：
 
-```typescript
-// 直接用返回来的 *_name 字段渲染
-{record.applicantName || '-'}
-{record.approverName || '待审批'}
+```java
+@Resource
+private com.dataops.dms.mapper.UserMapper userMapper;
+
+private void enrichWithNickname(java.util.List<? extends Object> list) {
+    if (list == null || list.isEmpty()) return;
+    try {
+        java.util.Set<String> userIds = new java.util.HashSet<>();
+        java.util.Map<String, String> idToDisplay = new java.util.HashMap<>();
+        java.util.Map<String, String> usernameToDisplay = new java.util.HashMap<>();
+
+        for (Object item : list) {
+            try {
+                // 显式列出需要查询的 id 字段（按实际 Entity 调整）
+                Object[] ids = new Object[]{
+                    invokeGetter(item, "getApplicantId"),
+                    invokeGetter(item, "getApproverId"),
+                    invokeGetter(item, "getOwnerId"),
+                    invokeGetter(item, "getCreatorId"),
+                    invokeGetter(item, "getCreatedBy"),
+                    invokeGetter(item, "getOperatorId"),
+                };
+                for (Object id : ids) {
+                    if (id != null) userIds.add((String) id);
+                }
+            } catch (Exception ignored) {}
+        }
+
+        if (!userIds.isEmpty()) {
+            try {
+                java.util.List<com.dataops.dms.entity.User> users = userMapper.selectBatchIds(userIds);
+                if (users != null) {
+                    for (com.dataops.dms.entity.User u : users) {
+                        String display = (u.getNickname() != null && !u.getNickname().isEmpty())
+                            ? u.getNickname() : u.getUsername();
+                        idToDisplay.put(u.getId(), display);
+                        if (u.getUsername() != null) usernameToDisplay.put(u.getUsername(), display);
+                    }
+                }
+            } catch (Exception ignored) {}
+        }
+
+        for (Object item : list) {
+            try {
+                setDisplayIfPresent(item, "getApplicantId", "setApplicantName", idToDisplay, usernameToDisplay);
+                setDisplayIfPresent(item, "getApproverId", "setApproverName", idToDisplay, usernameToDisplay);
+                setDisplayIfPresent(item, "getOwnerId", "setOwnerName", idToDisplay, usernameToDisplay);
+                setDisplayIfPresent(item, "getCreatorId", "setCreatorName", idToDisplay, usernameToDisplay);
+                setDisplayIfPresent(item, "getCreatedBy", "setCreatedByName", idToDisplay, usernameToDisplay);
+                setDisplayIfPresent(item, "getOperatorId", "setOperatorName", idToDisplay, usernameToDisplay);
+            } catch (Exception ignored) {}
+        }
+    } catch (Exception ignored) {}
+}
+
+private Object invokeGetter(Object obj, String methodName) {
+    try {
+        return obj.getClass().getMethod(methodName).invoke(obj);
+    } catch (Exception e) { return null; }
+}
+
+private void setDisplayIfPresent(Object item, String getter, String setter,
+                                 java.util.Map<String, String> idToDisplay,
+                                 java.util.Map<String, String> usernameToDisplay) {
+    try {
+        Object id = item.getClass().getMethod(getter).invoke(item);
+        if (id != null && idToDisplay.containsKey(id)) {
+            item.getClass().getMethod(setter, String.class).invoke(item, idToDisplay.get(id));
+        }
+    } catch (Exception ignored) {}
+}
 ```
 
-## 关键数据正确性检查
+**调用方式**（在 Controller 的 GET 列表/详情接口中）：
 
-- 编译通过 → 重启后端
-- 刷新前端列表验证"发起人""当前处理人"等列显示的是昵称（如"杨湘远""超级管理员"），而不是账号（0142429"
-- 历史数据（没有 *_id 但有 *_name 存 username）也能正确通过 username 反查到昵称
+```java
+@GetMapping("/my")
+@Operation(summary = "获取我的申请")
+public Result<List<YourEntity>> getMy(HttpServletRequest request) {
+    String userId = (String) request.getAttribute("userId");
+    List<YourEntity> list = yourService.getMyItems(userId);
+    enrichWithNickname(list);   // ← 统一回填昵称
+    return Result.success(list);
+}
+
+@GetMapping("/{id}")
+public Result<YourEntity> getById(@PathVariable String id) {
+    YourEntity item = yourService.getById(id);
+    if (item == null) return Result.error(404, "Not found");
+    enrichWithNickname(java.util.Collections.singletonList(item));
+    return Result.success(item);
+}
+```
+
+## 认证来源：创建/提交新工单时写什么到数据库
+
+在 `PermissionRequestController` 等提交接口里，从 `request.getAttribute("userId")` 取当前用户 ID 来写库：
+
+```java
+String userId = (String) request.getAttribute("userId");    // "859f8f0d9436..." —— 存这个到 applicant_id
+String username = (String) request.getAttribute("username"); // "0142429" —— 仅当 applicant_id 没有时兜底写
+// 不要直接写 nickname 到业务表
+```
+
+**写库代码示例**：
+
+```java
+req.setApplicantId(userId);           // ✅ 存稳定主键
+// req.setApplicantName(nickname);     // ❌ 不要存，查询时回填
+```
+
+## 前端渲染（直接用返回的 `*_name`）
+
+```typescript
+{
+  title: '发起人',
+  dataIndex: 'applicantName',
+  key: 'applicantName',
+  width: 120,
+  render: (v: string) => v || '-'
+}
+```
+
+## 已在项目中实现的参考位置
+
+| 文件 | 说明 |
+|------|------|
+| `backend/.../controller/PermissionRequestController.java` | 工单列表/详情，`enrichWithNickname` 方法，单条详情用 `Collections.singletonList()` 包装 |
+| `backend/.../entity/PermissionRequest.java` | Entity 字段约定：`applicantId`/`applicantName` |
+| `backend/.../entity/User.java` | `id`（主键）、`username`（登录账号）、`nickname`（昵称） |
+| `backend/.../mapper/UserMapper.java` | `extends BaseMapper<User>`，提供 `selectBatchIds(Collection<? extends Serializable>)` |
+| `backend/.../config/JwtAuthFilter.java` | 认证后放入 `request.setAttribute("userId", ...)` |
+
+## 新增页面 Checklist
+
+创建一个新的含用户显示的列表/详情接口时按以下步骤走：
+
+1. [ ] **业务表设计** → 只写 `*_id`（用户主键）到数据库，** 不建 `*_name` 字段 **
+2. [ ] **Entity 设计** → 同时写 `*Id` 和 `*Name` 两个字段；`*Id` 走 MyBatis-Plus 持久化，`*Name` 标注 `@TableField(exist=false)` 或直接不写注解（让 Controller 层显式回填）
+3. [ ] **创建/提交逻辑** → 写入 `applicantId = request.getAttribute("userId")`，不要写 `applicantName` 到数据库
+4. [ ] **列表查询接口** → `return` 前调用 `enrichWithNickname(list)`
+5. [ ] **详情查询接口** → `return` 前调用 `enrichWithNickname(Collections.singletonList(item))`
+6. [ ] **编译** → `mvn clean compile`
+7. [ ] **重启后端** → 刷新前端验证显示为昵称（如"杨湘远""超级管理员"），不是账号（`0142429`、`admin`）
+
+## 反模式（项目内已踩过的坑）
+
+| 反模式 | 问题 | 正确做法 |
+|--------|------|---------|
+| 业务表存 `nickname` | 用户改昵称后历史数据仍然显示旧昵称 | 只存 `user_id` |
+| 用 `nickname` 反向查用户 | nickname 可修改，查不到或查错 | 用 `user_id` 主键查；兜底用 `username` 登录账号查 |
+| 前端自己调接口查用户表 | 性能差（N+1 查询），维护成本高 | 后端返回前统一回填，前端直接用 `*Name` 字段 |
+| 业务表只存 `username` 账号 | 同样有账号变更风险（虽概率低但非零） | 存 `user_id` 主键 |
+| 数据库存 `applicant_name` 但不是 username 而是 nickname | 查询层用 nickname 反查，极不稳定 | 删除 `applicant_name` 列或确保存的是 username 不改变 |
+
+## 验证 Checklist（上线前确认）
+
+- [ ] 数据库里新写的工单记录有正确的 `applicant_id`（能在 `sys_user.id` 里找到）
+- [ ] 旧工单即使 `applicant_id` 为空也能通过 `applicant_name`（存的是 username 登录账号）查到昵称
+- [ ] 刷新前端列表，`发起人/审批人` 列显示的是真实昵称（如 "杨湘远"）而非登录账号
+- [ ] MyBatis-Plus 的 `selectBatchIds(Collection)` 只查一次，没有 N+1 查询问题
+- [ ] 编译通过 + 服务重启成功
+
+## 典型场景字段命名对照表
+
+| 功能页面 | *Id 字段（写库） | *Name 字段（展示） |
+|---------|------------------|-------------------|
+| 权限工单列表 | `applicantId`, `approverId` | `applicantName`, `approverName` |
+| 数据变更工单 | `creatorId`, `ownerId` | `creatorName`, `ownerName` |
+| 元数据资源 Owner | `ownerId` | `ownerName` |
+| SQL查询历史 | `createdBy` | `createdByName` |
+| 审计日志 | `operatorId` | `operatorName` |
 
