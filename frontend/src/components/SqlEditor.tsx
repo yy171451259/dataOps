@@ -207,21 +207,124 @@ const BottomPanel: React.FC<BottomPanelProps> = ({ visible, activeTabData, onUse
 
 
   const handleAddFavorite = () => {
-
-    if (!activeTabData?.sql?.trim()) { message.warning('OK'); return; }
-
+    if (!activeTabData?.sql?.trim()) { message.warning('请先输入SQL'); return; }
     const existing = savedQueries.find(q => q.sql.trim() === activeTabData.sql.trim());
-
     if (existing) {
-
-      if (existing.isFavorite) {
-
+      if (!existing.isFavorite) {
         toggleFavorite(existing.id);
-
-        message.success('OK');
-
+        message.success('已添加到收藏');
+      } else {
+        toggleFavorite(existing.id);
+        message.success('已取消收藏');
+      }
+      return;
+    }
+    const newQuery = {
+      id: Date.now().toString(),
+      name: `SQL ${savedQueries.length + 1}`,
+      sql: activeTabData.sql,
+      databaseId: activeTabData.databaseId,
+      databaseName: activeTabData.databaseName,
+      isFavorite: true,
+      createdAt: Date.now(),
+      executionCount: 0,
+      totalDuration: 0,
+    };
+    addSavedQuery(newQuery);
+    message.success('已保存并添加到收藏');
   };
 
+  const handleEdit = (q: any) => {
+    setEditingQuery(q);
+    setEditForm({ name: q.name, sql: q.sql });
+    setEditModalOpen(true);
+  };
+
+  const handleDelete = (id: string) => {
+    deleteSavedQuery(id);
+    message.success('已删除');
+  };
+
+  const handleSaveEdit = () => {
+    if (editingQuery) {
+      updateSavedQuery(editingQuery.id, { ...editingQuery, ...editForm });
+      message.success('保存成功');
+      setEditModalOpen(false);
+    }
+  };
+
+  const handleClearHistory = () => {
+    clearExecutionHistory();
+    message.success('已清空执行历史');
+  };
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
+      <Tabs activeKey={panelTab} onChange={setPanelTab} size="small" tabBarStyle={{ margin: 0 }}>
+        <Tabs.TabPane tab={
+          <span><StarFilled style={{ color: '#faad14' }} /> 我的SQL ({dbFilteredQueries.length})</span>
+        } key="favorites">
+          <div style={{ padding: 8, borderBottom: '1px solid #eee' }}>
+            <Input size="small" placeholder="搜索 SQL..." prefix={<SearchOutlined />} value={searchText} onChange={e => setSearchText(e.target.value)} allowClear />
+          </div>
+          <div style={{ padding: 8, display: 'flex', gap: 4 }}>
+            <Button size="small" icon={<StarOutlined />} onClick={handleAddFavorite} type="primary">添加当前SQL到收藏</Button>
+          </div>
+          <div style={{ flex: 1, overflow: 'auto' }}>
+            {filteredSavedQueries.length === 0 ? (
+              <Empty description="暂无保存的SQL" style={{ marginTop: 40 }} />
+            ) : (
+              filteredSavedQueries.map((q: any) => (
+                <div key={q.id} style={{ padding: '8px 12px', borderBottom: '1px solid #f0f0f0', cursor: 'pointer' }} onClick={() => onUseQuery(q.sql)}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      {q.isFavorite && <StarFilled style={{ fontSize: 11, color: '#faad14' }} />}
+                      <span style={{ fontWeight: 500, fontSize: 12 }}>{q.name}</span>
+                      <Rate disabled value={getPopularityRate(q.executionCount || 0)} count={5} style={{ fontSize: 10 }} />
+                    </div>
+                    <div style={{ display: 'flex', gap: 4 }}>
+                      <Button size="small" type="text" icon={<EditOutlined />} onClick={(e) => { e.stopPropagation(); handleEdit(q); }} />
+                      <Popconfirm title="删除此SQL?" onConfirm={() => handleDelete(q.id)}><Button size="small" type="text" danger onClick={(e) => e.stopPropagation()} icon={<DeleteOutlined />} /></Popconfirm>
+                    </div>
+                  </div>
+                  <div style={{ fontSize: 10, color: '#999', marginTop: 4, fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{q.sql.slice(0, 80)}...</div>
+                  <div style={{ fontSize: 10, color: '#bbb', marginTop: 2 }}>执行 {q.executionCount || 0}次 · {new Date(q.createdAt).toLocaleDateString()}</div>
+                </div>
+              ))
+            )}
+          </div>
+        </Tabs.TabPane>
+        <Tabs.TabPane tab={<span><ClockCircleOutlined /> 执行历史</span>} key="history">
+          <div style={{ padding: 8, borderBottom: '1px solid #eee', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span style={{ fontSize: 11, color: '#999' }}>共 {dbFilteredHistory.length} 条记录</span>
+            {dbFilteredHistory.length > 0 && <Button size="small" danger onClick={handleClearHistory}>清空</Button>}
+          </div>
+          <div style={{ flex: 1, overflow: 'auto' }}>
+            {filteredHistory.length === 0 ? (
+            <Empty description="暂无执行历史" style={{ marginTop: 40 }} />
+          ) : (
+            filteredHistory.slice(0, 100).map((h: any) => (
+              <div key={h.id} style={{ padding: '6px 12px', borderBottom: '1px solid #f0f0f0', cursor: 'pointer' }} onClick={() => onUseQuery(h.sql)}>
+                <div style={{ fontSize: 10, color: '#666', fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{h.sql.slice(0, 100)}</div>
+                <div style={{ fontSize: 10, color: '#bbb', marginTop: 2 }}>{new Date(h.timestamp).toLocaleString()} · {h.duration}ms</div>
+              </div>
+            ))
+          )}
+          </div>
+        </Tabs.TabPane>
+      </Tabs>
+      <Modal title="编辑SQL" open={editModalOpen} onOk={handleSaveEdit} onCancel={() => setEditModalOpen(false)} okText="保存" cancelText="取消">
+        <div style={{ marginBottom: 12 }}>
+          <label style={{ display: 'block', fontSize: 12, color: '#666', marginBottom: 4 }}>名称</label>
+          <Input value={editForm.name} onChange={(e) => setEditForm(prev => ({ ...prev, name: e.target.value }))} />
+        </div>
+        <div>
+          <label style={{ display: 'block', fontSize: 12, color: '#666', marginBottom: 4 }}>SQL</label>
+          <Input.TextArea value={editForm.sql} rows={6} onChange={(e) => setEditForm(prev => ({ ...prev, sql: e.target.value }))} style={{ fontFamily: 'Consolas, monospace' }} />
+        </div>
+      </Modal>
+    </div>
+  );
 };
 
 const ExecutionStats: React.FC<{ result: any }> = ({ result }) => {
