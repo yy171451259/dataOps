@@ -32,6 +32,9 @@ public class JwtAuthFilter extends OncePerRequestFilter {
     @Resource
     private PermissionMapper permissionMapper;
 
+    @Resource
+    private com.dataops.dms.mapper.UserMapper userMapper;
+
     private static final List<String> EXCLUDE_PATHS = Arrays.asList(
             "/api/v1/auth/login",
             "/api/v1/auth/register",
@@ -88,6 +91,18 @@ public class JwtAuthFilter extends OncePerRequestFilter {
         // 将用户信息放入request attribute（兼容旧代码）
         request.setAttribute("userId", userId);
         request.setAttribute("username", username);
+
+        // 查询是否为管理员，放入 request attribute
+        try {
+            com.dataops.dms.entity.User user = userMapper.selectById(userId);
+            if (user != null) {
+                request.setAttribute("isAdmin", Boolean.TRUE.equals(user.getIsAdmin()));
+            } else {
+                request.setAttribute("isAdmin", false);
+            }
+        } catch (Exception e) {
+            request.setAttribute("isAdmin", false);
+        }
 
         filterChain.doFilter(request, response);
     }

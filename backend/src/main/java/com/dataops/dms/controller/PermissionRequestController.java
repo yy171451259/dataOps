@@ -31,6 +31,12 @@ public class PermissionRequestController {
     @Resource
     private PermissionRequestService requestService;
 
+    @Resource
+    private com.dataops.dms.service.ResourceOwnerService resourceOwnerService;
+
+    @Resource
+    private com.dataops.dms.mapper.UserMapper userMapper;
+
     // ==================== 工单列表 ====================
 
     @GetMapping("/tickets")
@@ -74,9 +80,37 @@ public class PermissionRequestController {
     // ==================== 我的 / 待审批 ====================
 
     @GetMapping("/pending")
-    @Operation(summary = "获取待审批列表")
-    public Result<List<PermissionRequest>> getPending() {
-        return Result.success(requestService.getPendingRequests(null));
+    @Operation(summary = "获取待审批列表（仅显示当前用户作为审批人的工单）")
+    public Result<List<PermissionRequest>> getPending(HttpServletRequest request) {
+        String userId = (String) request.getAttribute("userId");
+        Boolean isAdmin = (Boolean) request.getAttribute("isAdmin");
+        if (userId == null) userId = "user_admin";
+
+        // 管理员可以看到所有待审批工单，普通用户只看到自己作为审批人的工单
+        List<PermissionRequest> list = requestService.getPendingRequests(userId);
+        // 若当前用户是资源 Owner 但未在 approver 中，也应该能看到（通过 Service 层已处理）
+        // 同时管理员可额外看到未指定审批人的工单
+        if (Boolean.TRUE.equals(isAdmin)) {
+            List<PermissionRequest> unassigned = requestService.getUnassignedPendingRequests();
+            if (unassigned != null && !unassigned.isEmpty()) {
+                java.util.Set<String> seenIds = new java.util.HashSet<>();
+                java.util.List<PermissionRequest> merged = new java.util.ArrayList<>();
+                for (PermissionRequest r : list) {
+                    if (seenIds.add(r.getId())) merged.add(r);
+                }
+                for (PermissionRequest r : unassigned) {
+                    if (seenIds.add(r.getId())) merged.add(r);
+                }
+                // 按创建时间倒序
+                merged.sort((a, b) -> {
+                    if (a.getCreatedAt() == null) return 1;
+                    if (b.getCreatedAt() == null) return -1;
+                    return b.getCreatedAt().compareTo(a.getCreatedAt());
+                });
+                list = merged;
+            }
+        }
+        return Result.success(list);
     }
 
     @GetMapping("/my")
@@ -121,6 +155,11 @@ public class PermissionRequestController {
         req.setReason(dto.getReason());
         req.setApprovalLevel(dto.getApprovalLevel() != null ? dto.getApprovalLevel() : 1);
         req.setCurrentApprovalStep(0);
+
+        // 根据资源查找审批人
+        String[] approver = resolveApprover(dto.getResourceType(), dto.getResourceId(), null, null);
+        req.setApproverId(approver[0]);
+        req.setApproverName(approver[1]);
         // 支持过期时间
         if (dto.getExpireTime() != null) {
             req.setExpiredAt(dto.getExpireTime());
@@ -171,14 +210,49 @@ public class PermissionRequestController {
             if (title == null || title.isEmpty()) {
                 title = String.format("【%s】申请%s的%s",
                         resolveTypeLabel(dto.getTicketType()),
-                        resource.getSchemaName(),
+                        resource.getSchemaName() != null ? resource.getSchemaName() : resource.getInstanceName(),
                         formatPermissions(dto.getPermissionTypes()));
             }
             req.setResourceName(title);
 
-            req.setResourceType(resolveResourceType(dto.getTicketType(), resource));
-            req.setResourceId(resource.getInstanceId());  // 主要资源ID为数据库ID
-            req.setRequestedPermissions(permsStr);      // query,export,update
+            // 按资源类型设置 resourceType 和 resourceId
+            String rType = resource.getResourceType();
+            if (rType == null) {
+                rType = resolveResourceType(dto.getTicketType(), resource);
+            }
+            req.setResourceType(rType);
+            if ("instance".equals(rType)) {
+                req.setResourceId(resource.getInstanceId());
+            } else if ("table".equals(rType)) {
+                req.setResourceId(resource.getInstanceId() + ":" +
+                        (resource.getSchemaName() != null ? resource.getSchemaName() : ""));
+            } else {
+                req.setResourceId(resource.getInstanceId() + ":" +
+                        (resource.getSchemaName() != null ? resource.getSchemaName() : ""));
+            }
+
+            // 根据资源查找审批人（支持逐级回退：schema/table -> instance）
+            String parentResourceType = null;
+            String parentResourceId = null;
+            String ownerResourceType = rType;
+            String ownerResourceId = req.getResourceId();
+            if (!"instance".equals(rType)) {
+                parentResourceType = "instance";
+                parentResourceId = resource.getInstanceId();
+                // schema 资源：Owner 可能匹配 schema 名（仅 schema 部分），尝试两种
+            }
+            String[] approver = resolveApprover(ownerResourceType, ownerResourceId, parentResourceType, parentResourceId);
+            // schema 情况下如果 Owner 未匹配 "instanceId:schemaName"，尝试仅匹配 schemaName
+            if (approver[0] == null && !"instance".equals(rType) && resource.getSchemaName() != null) {
+                String[] fallback = resolveApprover(rType, resource.getSchemaName(), "instance", resource.getInstanceId());
+                if (fallback[0] != null) {
+                    approver = fallback;
+                }
+            }
+            req.setApproverId(approver[0]);
+            req.setApproverName(approver[1]);
+
+            req.setRequestedPermissions(permsStr);
             req.setReason(dto.getReason());
             req.setStatus("pending");
             req.setApprovalLevel(1);
@@ -207,8 +281,13 @@ public class PermissionRequestController {
     public Result<Boolean> approve(@PathVariable String id, @RequestBody ApproveRequestDTO dto, HttpServletRequest request) {
         String approverId = (String) request.getAttribute("userId");
         String approverName = (String) request.getAttribute("username");
+        Boolean isAdmin = (Boolean) request.getAttribute("isAdmin");
         if (approverId == null) approverId = "user_admin";
         if (approverName == null) approverName = "admin";
+
+        if (!requestService.canApprove(id, approverId, Boolean.TRUE.equals(isAdmin))) {
+            return Result.error(403, "无权审批该工单，非该资源的 Owner 或管理员");
+        }
 
         boolean result = requestService.approveRequest(id, approverId, approverName, true, dto.getComment());
         return Result.success("审批通过并自动授权", result);
@@ -219,8 +298,13 @@ public class PermissionRequestController {
     public Result<Boolean> reject(@PathVariable String id, @RequestBody ApproveRequestDTO dto, HttpServletRequest request) {
         String approverId = (String) request.getAttribute("userId");
         String approverName = (String) request.getAttribute("username");
+        Boolean isAdmin = (Boolean) request.getAttribute("isAdmin");
         if (approverId == null) approverId = "user_admin";
         if (approverName == null) approverName = "admin";
+
+        if (!requestService.canApprove(id, approverId, Boolean.TRUE.equals(isAdmin))) {
+            return Result.error(403, "无权审批该工单，非该资源的 Owner 或管理员");
+        }
 
         boolean result = requestService.approveRequest(id, approverId, approverName, false, dto.getComment());
         return Result.success("审批已拒绝", result);
@@ -260,6 +344,46 @@ public class PermissionRequestController {
     }
 
     // ==================== 私有辅助方法 ====================
+
+    /**
+     * 查找资源的审批人
+     * 1) 优先匹配当前资源类型在 sys_resource_owner 中的 Owner
+     * 2) 若未找到，回退到父级资源（schema -> instance）
+     * 3) 仍未找到，回退到管理员（isAdmin=true 的用户，取第一个）
+     */
+    private String[] resolveApprover(String resourceType, String resourceId,
+                                     String parentResourceType, String parentResourceId) {
+        // 1) 当前资源 Owner
+        java.util.List<com.dataops.dms.entity.ResourceOwner> owners =
+                resourceOwnerService.listByResource(resourceType, resourceId);
+        if (owners != null && !owners.isEmpty()) {
+            com.dataops.dms.entity.ResourceOwner owner = owners.get(0);
+            return new String[] { owner.getOwnerUserId(), owner.getOwnerUsername() };
+        }
+
+        // 2) 父级资源 Owner
+        if (parentResourceType != null && parentResourceId != null) {
+            java.util.List<com.dataops.dms.entity.ResourceOwner> parentOwners =
+                    resourceOwnerService.listByResource(parentResourceType, parentResourceId);
+            if (parentOwners != null && !parentOwners.isEmpty()) {
+                com.dataops.dms.entity.ResourceOwner owner = parentOwners.get(0);
+                return new String[] { owner.getOwnerUserId(), owner.getOwnerUsername() };
+            }
+        }
+
+        // 3) 管理员兜底
+        try {
+            com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<com.dataops.dms.entity.User> wrapper =
+                    new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<>();
+            wrapper.eq(com.dataops.dms.entity.User::getIsAdmin, true).last("LIMIT 1");
+            com.dataops.dms.entity.User admin = userMapper.selectOne(wrapper);
+            if (admin != null) {
+                return new String[] { admin.getId(), admin.getUsername() };
+            }
+        } catch (Exception ignored) { }
+
+        return new String[] { null, null };
+    }
 
     private String resolveTypeLabel(String ticketType) {
         if (ticketType == null) return "库权限";

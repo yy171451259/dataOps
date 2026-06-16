@@ -13,7 +13,15 @@ public interface PermissionRequestService extends IService<PermissionRequest> {
 
     List<PermissionRequest> getPendingRequests(String approverId);
 
+    List<PermissionRequest> getUnassignedPendingRequests();
+
     List<PermissionRequest> getMyRequests(String applicantId);
 
     boolean cancelRequest(String requestId, String userId);
+
+    /**
+     * 检查当前用户是否有权审批该工单
+     * 规则：当前用户是工单的 approver，或是管理员，或当前用户是资源的 Owner
+     */
+    boolean canApprove(String requestId, String userId, boolean isAdmin);
 }

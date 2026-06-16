@@ -2,11 +2,13 @@ import React, { useState, useEffect } from 'react';
 import {
   Button, Table, message, Tabs, Tag, Form, Select, Checkbox, Input, Modal,
   Space, Card, Descriptions, Badge, Empty, Popconfirm, Tooltip,
+  Steps, Row, Col, Timeline,
 } from 'antd';
 import {
   PlusOutlined, CheckOutlined, CloseOutlined, EyeOutlined,
   SendOutlined, ReloadOutlined, UndoOutlined,
   SearchOutlined, ArrowRightOutlined, ArrowLeftOutlined,
+  CheckCircleFilled, CloseCircleFilled,
 } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { useAuthStore } from '../store/useAuthStore';
@@ -41,7 +43,7 @@ const statusMap: Record<string, { color: string; text: string }> = {
 
 const resourceTypeLabels: Record<string, string> = {
   instance: '实例',
-  database: '数据库',
+  database: 'Schema',
   table: '数据表',
   column: '字段',
 };
@@ -164,17 +166,14 @@ const PermissionRequestPage: React.FC = () => {
 
   const toggleResourceCheck = (instanceId: string, databaseId: string, databaseName: string, checked: boolean, resourceType: 'instance' | 'database') => {
     if (!checked) {
-      // 如果取消的是实例级别，同时取消该实例下所有已选的数据库
       if (resourceType === 'instance') {
+        // 取消实例级：移除该实例下所有已选资源
         setSelectedResources(prev => prev.filter(r => r.instanceId !== instanceId));
       } else {
-        // 如果取消的是数据库级别，只取消该数据库
-        setSelectedResources(prev => prev.filter(r => r.databaseId === databaseId && r.resourceType === 'database'));
-        // 检查是否还剩该实例下的数据库被选中，如果没有，也要取消实例级别的选中状态
-        const remainingDb = selectedResources.find(r => r.instanceId === instanceId && r.resourceType === 'database');
-        if (!remainingDb) {
-          setSelectedResources(prev => prev.filter(r => r.databaseId !== instanceId || r.resourceType !== 'instance'));
-        }
+        // 取消数据库级：移除匹配 instanceId + databaseId + resourceType 的那一项
+        setSelectedResources(prev =>
+          prev.filter(r => !(r.instanceId === instanceId && r.databaseId === databaseId && r.resourceType === 'database'))
+        );
       }
       return;
     }
@@ -207,8 +206,9 @@ const PermissionRequestPage: React.FC = () => {
         ticketType: 'database',
         resources: selectedResources.map(r => ({
           resourceType: r.resourceType || 'database',
-          resourceId: r.resourceType === 'instance' ? r.instanceId : `${r.instanceId}:${r.databaseId}`,
-          resourceName: r.resourceType === 'instance' ? r.instanceName : `${r.instanceName}/${r.databaseName}`,
+          instanceId: r.instanceId,
+          instanceName: r.instanceName,
+          schemaName: r.resourceType === 'instance' ? undefined : r.databaseName,
         })),
         permissionTypes: checkedPerms,
         expireDays: expireDays > 0 ? expireDays : undefined,
@@ -415,7 +415,7 @@ const PermissionRequestPage: React.FC = () => {
             initialValues={{ resourceType: undefined, permissions: [] }}
           >
             {/* 左右分栏选择资源 */}
-            <Form.Item label="选择要申请的实例/库" required>
+            <Form.Item label="选择要申请的实例/Schema" required>
               <div style={{ display: 'flex', gap: 16, height: 320 }}>
                 {/* 左侧：实例列表 */}
                 <div style={{ width: 500, display: 'flex', flexDirection: 'column' }}>
@@ -446,7 +446,6 @@ const PermissionRequestPage: React.FC = () => {
                                 {expandedInstances.has(inst.id) ? '▼' : '▶'} {inst.name}
                               </span>
                               <span style={{ color: '#999', fontSize: 12 }}>{inst.host}:{inst.port}</span>
-                              <span style={{ color: '#52c41a', fontSize: 11, marginLeft: 'auto' }}>[实例]</span>
                             </div>
                             {/* 展开显示数据库列表 */}
                             {expandedInstances.has(inst.id) && (
@@ -459,7 +458,6 @@ const PermissionRequestPage: React.FC = () => {
                                         onChange={e => toggleResourceCheck(inst.id, db.name, db.name, e.target.checked, 'database')}
                                       />
                                       <span style={{ fontSize: 12 }}>{db.name}</span>
-                                      <span style={{ color: '#1890ff', fontSize: 11, marginLeft: 'auto' }}>[数据库]</span>
                                     </div>
                                   ))
                                 ) : (
@@ -483,7 +481,6 @@ const PermissionRequestPage: React.FC = () => {
                     onClick={() => {}}
                     style={{ opacity: 0.4, cursor: 'not-allowed' }}
                   >
-                    添加
                   </Button>
                   <Button
                     type="default"
@@ -492,7 +489,6 @@ const PermissionRequestPage: React.FC = () => {
                     disabled={selectedResources.length === 0}
                     onClick={() => setSelectedResources([])}
                   >
-                    清除
                   </Button>
                 </div>
 
@@ -519,7 +515,7 @@ const PermissionRequestPage: React.FC = () => {
                           >
                             <span style={{ fontSize: 12 }}>
                               {r.resourceType === 'instance'
-                                ? `${r.instanceName} (${r.host || ''}:${r.port || ''})`
+                                ? r.instanceName
                                 : `${r.instanceName} / ${r.databaseName}`
                               }
                             </span>
@@ -687,53 +683,246 @@ const PermissionRequestPage: React.FC = () => {
         open={detailVisible}
         onCancel={() => setDetailVisible(false)}
         footer={null}
-        width={600}
+        width={820}
         destroyOnClose
       >
-        {detailRequest && (
-          <Descriptions bordered column={2} size="small">
-            <Descriptions.Item label="申请ID">{detailRequest.id}</Descriptions.Item>
-            <Descriptions.Item label="状态">
-              <Badge
-                status={(statusMap[detailRequest.status]?.color || 'default') as any}
-                text={statusMap[detailRequest.status]?.text || detailRequest.status}
-              />
-            </Descriptions.Item>
-            <Descriptions.Item label="资源类型">
-              <Tag>{resourceTypeLabels[detailRequest.resourceType] || detailRequest.resourceType}</Tag>
-            </Descriptions.Item>
-            <Descriptions.Item label="资源ID">{detailRequest.resourceId}</Descriptions.Item>
-            <Descriptions.Item label="资源名称" span={2}>{detailRequest.resourceName || '-'}</Descriptions.Item>
-            <Descriptions.Item label="申请权限" span={2}>
-              <Space size={[2, 2]} wrap>
-                {(detailRequest.permissions || []).map((p) => (
-                  <Tag key={p} color="blue">{p}</Tag>
-                ))}
-              </Space>
-            </Descriptions.Item>
-            <Descriptions.Item label="申请人">{detailRequest.applicantName || detailRequest.applicantId}</Descriptions.Item>
-            <Descriptions.Item label="申请时间">
-              {detailRequest.createTime ? dayjs(detailRequest.createTime).format('YYYY-MM-DD HH:mm:ss') : '-'}
-            </Descriptions.Item>
-            <Descriptions.Item label="申请原因" span={2}>{detailRequest.reason || '-'}</Descriptions.Item>
-            {detailRequest.approverId && (
-              <>
-                <Descriptions.Item label="审批人">
-                  {detailRequest.approverName || detailRequest.approverId}
-                </Descriptions.Item>
-                <Descriptions.Item label="审批时间">
-                  {detailRequest.updateTime ? dayjs(detailRequest.updateTime).format('YYYY-MM-DD HH:mm:ss') : '-'}
-                </Descriptions.Item>
-                <Descriptions.Item label="审批意见" span={2}>
-                  {detailRequest.approverComment || '-'}
-                </Descriptions.Item>
-              </>
-            )}
-          </Descriptions>
-        )}
+        {detailRequest && <RequestDetail request={detailRequest} />}
       </Modal>
     </div>
   );
 };
 
 export default PermissionRequestPage;
+
+/** ---------------- 详情组件：步骤流风格 ---------------- */
+
+interface DetailResourceInfo {
+  instanceId?: string;
+  instanceName?: string;
+  databaseId?: string;
+  databaseName?: string;
+  environment?: string;
+  tables?: string[];
+}
+
+function parseReasonExtra(reason: string): { info: DetailResourceInfo | null; plainText: string } {
+  if (!reason) return { info: null, plainText: '' };
+  if (reason.startsWith('[JSON]')) {
+    const end = reason.indexOf('}', 6);
+    if (end > 0) {
+      try {
+        const jsonStr = reason.substring(6, end + 1);
+        const obj = JSON.parse(jsonStr);
+        const info: DetailResourceInfo = {
+          instanceId: obj.instanceId || obj.databaseId,
+          instanceName: obj.instanceName || obj.databaseName,
+          databaseName: obj.databaseName || obj.schemaName,
+          environment: obj.environment,
+          tables: obj.tables,
+        };
+        const rest = reason.substring(end + 1).trim();
+        return { info, plainText: rest };
+      } catch {
+        return { info: null, plainText: reason };
+      }
+    }
+  }
+  return { info: null, plainText: reason };
+}
+
+const RequestDetail: React.FC<{ request: PermissionRequest }> = ({ request }) => {
+  const { info, plainText } = parseReasonExtra(request.reason || '');
+  const createTime = (request as any).createdAt || (request as any).createTime;
+  const updateTime = (request as any).approvedAt || (request as any).updateTime;
+  const perms = request.permissions && request.permissions.length > 0
+    ? request.permissions
+    : (request as any).requestedPermissions
+      ? String((request as any).requestedPermissions).split(',').map((s: string) => s.trim()).filter(Boolean)
+      : [];
+  const permText = perms
+    .map((p: string) => ({
+      read: '查询', query: '查询',
+      export: '导出', write: '变更', update: '变更',
+      ddl: '结构变更'
+    } as any)[p] || p)
+    .join(' / ');
+  const typeText = (resourceTypeLabels as any)[request.resourceType] || request.resourceType || '-';
+  const resourceText = request.resourceName
+    ? request.resourceName
+    : (info?.instanceName || request.resourceId || '-');
+
+  const sectionStyle: React.CSSProperties = {
+    background: '#fff', border: '1px solid #e8e8e8', borderRadius: 4
+  };
+  const sectionHeader: React.CSSProperties = {
+    padding: '8px 16px', borderBottom: '1px solid #f0f0f0', fontSize: 13, fontWeight: 500,
+    display: 'flex', alignItems: 'center', justifyContent: 'space-between'
+  };
+
+  let approveBody: React.ReactNode;
+  let approveDotColor: string = 'gray';
+  if (request.status === 'pending') {
+    const approver = (request as any).approverName || (request as any).approverId;
+    approveBody = (
+      <div>
+        <Tag color="processing">待审批</Tag>
+        <span style={{ color: '#666', marginLeft: 8 }}>
+          {approver ? `等待 ${approver} 审批中...` : '等待资源 Owner 或管理员审批...'}
+        </span>
+      </div>
+    );
+    approveDotColor = 'blue';
+  } else if (request.status === 'approved') {
+    approveBody = (
+      <div>
+        <Tag color="success">审批通过</Tag>
+        <span style={{ color: '#222', marginLeft: 8 }}>
+          审批人：{request.approverName || request.approverId || '-'}
+        </span>
+        {updateTime && (
+          <span style={{ color: '#999', marginLeft: 12 }}>
+            ({dayjs(updateTime).format('YYYY-MM-DD HH:mm:ss')})
+          </span>
+        )}
+        {request.approverComment && (
+          <div style={{ marginTop: 6, color: '#555', background: '#fafafa', padding: '6px 10px', borderRadius: 4 }}>
+            审批意见：{request.approverComment}
+          </div>
+        )}
+      </div>
+    );
+    approveDotColor = 'green';
+  } else if (request.status === 'rejected') {
+    approveBody = (
+      <div>
+        <Tag color="error">审批拒绝</Tag>
+        <span style={{ color: '#222', marginLeft: 8 }}>
+          审批人：{request.approverName || request.approverId || '-'}
+        </span>
+        {updateTime && (
+          <span style={{ color: '#999', marginLeft: 12 }}>
+            ({dayjs(updateTime).format('YYYY-MM-DD HH:mm:ss')})
+          </span>
+        )}
+        {request.approverComment && (
+          <div style={{ marginTop: 6, color: '#555', background: '#fff2f0', padding: '6px 10px', borderRadius: 4 }}>
+            审批意见：{request.approverComment}
+          </div>
+        )}
+      </div>
+    );
+    approveDotColor = 'red';
+  } else {
+    approveBody = (
+      <div>
+        <Tag>已撤销</Tag>
+        <span style={{ color: '#666', marginLeft: 8 }}>申请人主动撤销了该申请</span>
+      </div>
+    );
+    approveDotColor = 'gray';
+  }
+
+  let finishText = '';
+  let finishColor = '#999';
+  if (request.status === 'approved') { finishText = '✓ 分配权限成功'; finishColor = '#52c41a'; }
+  else if (request.status === 'rejected') { finishText = '✗ 申请已拒绝，未分配权限'; finishColor = '#f5222d'; }
+  else if (request.status === 'pending') { finishText = '等待审批完成...'; }
+  else if (request.status === 'cancelled') { finishText = '申请已撤销'; }
+
+  return (
+    <div style={{ background: '#f5f7fa', padding: 16, borderRadius: 4 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', marginBottom: 8 }}>
+        <Badge
+          status={(statusMap[request.status]?.color || 'default') as any}
+          text={statusMap[request.status]?.text || request.status}
+        />
+      </div>
+
+      <Timeline
+        mode="left"
+        style={{ paddingLeft: 4 }}
+        items={[
+          {
+            color: 'green',
+            dot: <CheckCircleFilled style={{ color: '#52c41a', fontSize: 16 }} />,
+            children: (
+              <div style={sectionStyle}>
+                <div style={sectionHeader}><span>基本信息</span></div>
+                <div style={{ padding: 12, fontSize: 12, lineHeight: 1.9 }}>
+                  <Row>
+                    <Col span={6} style={{ color: '#666' }}>提交时间</Col>
+                    <Col span={18} style={{ color: '#222' }}>
+                      {createTime ? dayjs(createTime).format('YYYY-MM-DD HH:mm:ss') : '-'}
+                    </Col>
+                  </Row>
+                  <Row>
+                    <Col span={6} style={{ color: '#666' }}>基本信息</Col>
+                    <Col span={18} style={{ color: '#222' }}>
+                      {request.applicantName || request.applicantId} 申请 {resourceText} 的 {permText || '权限'}
+                    </Col>
+                  </Row>
+                  <Row>
+                    <Col span={6} style={{ color: '#666' }}>背景描述</Col>
+                    <Col span={18} style={{ color: '#222' }}>{plainText || '-'}</Col>
+                  </Row>
+
+                  <div style={{ marginTop: 6 }}>
+                    <div style={{ color: '#666', marginBottom: 4 }}>权限对象：{typeText}，共 1 个</div>
+                    <Table
+                      size="small"
+                      pagination={false}
+                      dataSource={[{
+                        key: request.id,
+                        instance: info?.instanceName || request.resourceName || '-',
+                        environment: info?.environment || '-',
+                        dba: request.approverName || '-'
+                      }]}
+                      columns={[
+                        { title: '序号', dataIndex: 'index', width: 60, render: (_v, _r, i) => i + 1 },
+                        { title: '实例地址 / 资源', dataIndex: 'instance' },
+                        { title: '环境', dataIndex: 'environment', width: 100, render: v => v && v !== '-' ? (
+                          <Tag color="orange">{v}</Tag>
+                        ) : '-' },
+                        { title: 'DBA', dataIndex: 'dba', width: 160 },
+                      ]}
+                    />
+                  </div>
+                </div>
+              </div>
+            )
+          },
+          {
+            color: approveDotColor,
+            dot: (request.status === 'approved' || request.status === 'rejected') ? (
+              request.status === 'approved'
+                ? <CheckCircleFilled style={{ color: '#52c41a', fontSize: 16 }} />
+                : <CloseCircleFilled style={{ color: '#f5222d', fontSize: 16 }} />
+            ) : undefined,
+            children: (
+              <div style={sectionStyle}>
+                <div style={sectionHeader}><span>审批</span></div>
+                <div style={{ padding: 12, fontSize: 12, lineHeight: 1.8 }}>{approveBody}</div>
+              </div>
+            )
+          },
+          {
+            color: request.status === 'approved' ? 'green' : (request.status === 'rejected' ? 'red' : 'gray'),
+            dot: request.status === 'approved'
+              ? <CheckCircleFilled style={{ color: '#52c41a', fontSize: 16 }} />
+              : request.status === 'rejected'
+                ? <CloseCircleFilled style={{ color: '#f5222d', fontSize: 16 }} />
+                : undefined,
+            children: (
+              <div style={sectionStyle}>
+                <div style={sectionHeader}><span>完成</span></div>
+                <div style={{ padding: 12, fontSize: 12, lineHeight: 1.8 }}>
+                  <span style={{ color: finishColor }}>{finishText}</span>
+                </div>
+              </div>
+            )
+          }
+        ]}
+      />
+    </div>
+  );
+};

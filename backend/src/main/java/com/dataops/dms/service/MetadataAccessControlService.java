@@ -3,6 +3,8 @@ package com.dataops.dms.service;
 import com.baomidou.mybatisplus.extension.service.IService;
 import com.dataops.dms.entity.MetadataAccessControl;
 
+import java.util.List;
+
 /**
  * 元数据访问控制服务接口
  */
@@ -49,4 +51,16 @@ public interface MetadataAccessControlService extends IService<MetadataAccessCon
      * @return 是否有权限
      */
     boolean canUserAccess(String userId, String resourceType, String resourceId, String action);
+
+    /**
+     * 检查一个实例是否存在任何需要申请权限的资源
+     * <p>
+     * 即：实例自身已开启访问控制，或实例下至少有一个 Schema 已开启访问控制。
+     * 用于权限申请页面判断该实例是否需要展示。
+     *
+     * @param instanceId  实例ID
+     * @param schemaNames 该实例下的所有 Schema 名称列表
+     * @return true 表示存在需要申请权限的资源
+     */
+    boolean instanceHasRestrictedResources(String instanceId, List<String> schemaNames);
 }

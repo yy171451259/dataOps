@@ -3,6 +3,7 @@ package com.dataops.dms.controller;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.dataops.dms.common.result.Result;
 import com.dataops.dms.entity.DatabaseInstance;
+import com.dataops.dms.entity.MetadataAccessControl;
 import com.dataops.dms.service.DatabaseInstanceService;
 import com.dataops.dms.service.MetadataAccessControlService;
 import com.dataops.dms.service.ResourceOwnerService;
@@ -15,6 +16,7 @@ import javax.annotation.Resource;
 import javax.servlet.http.HttpServletRequest;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 /**
@@ -39,7 +41,8 @@ public class DatabaseController {
      * 获取数据库实例列表
      * <p>
      * 默认按访问控制过滤（受限实例只对 Owner 和已授权用户可见）。
-     * 当 {@code all=true} 时返回所有实例，用于权限申请页面让用户可选择需要申请权限的资源。
+     * 当 {@code all=true} 时返回所有「受访问控制」的实例 —— 仅那些需要申请权限的资源，
+     * 用于权限申请页面让用户可选择需要申请权限的资源。
      */
     @GetMapping
     @Operation(summary = "获取实例列表")
@@ -50,8 +53,16 @@ public class DatabaseController {
         wrapper.orderByDesc(DatabaseInstance::getCreateTime);
         List<DatabaseInstance> instances = databaseInstanceService.list(wrapper);
 
-        // 访问控制过滤：受限实例只对 Owner 和已授权用户可见
-        if (!Boolean.TRUE.equals(all)) {
+        if (Boolean.TRUE.equals(all)) {
+            // all=true 用于权限申请场景：只展示存在需要申请权限资源的实例
+            // 即：实例自身受限 OR 实例下存在受限 Schema
+            final java.util.Set<String> controlledSchemaSet = buildControlledSchemaSet();
+            instances = instances.stream()
+                    .filter(inst -> accessControlService.isAccessControlled("instance", inst.getId())
+                            || hasControlledSchema(inst.getId(), controlledSchemaSet))
+                    .collect(Collectors.toList());
+        } else {
+            // 默认按访问控制过滤：受限实例只对 Owner 和已授权用户可见
             String userId = (String) request.getAttribute("userId");
             if (userId != null) {
                 instances = instances.stream()
@@ -173,7 +184,8 @@ public class DatabaseController {
      * 获取实例下的 Schema 列表
      * <p>
      * 默认按访问控制过滤（受限 Schema 只对 Owner 和已授权用户可见）。
-     * 当 {@code all=true} 时返回所有 Schema，用于权限申请页面让用户可选择需要申请权限的 Schema。
+     * 当 {@code all=true} 时返回所有「受访问控制」的 Schema —— 仅那些需要申请权限的资源（含层级继承），
+     * 用于权限申请页面让用户可选择需要申请权限的 Schema。
      */
     @GetMapping("/{id}/schemas")
     @Operation(summary = "获取Schema列表（SHOW DATABASES）")
@@ -183,8 +195,15 @@ public class DatabaseController {
             HttpServletRequest request) {
         try {
             List<String> schemas = databaseInstanceService.getSchemaNames(id);
-            // 访问控制过滤：受限 Schema 只对 Owner 和已授权用户可见
-            if (!Boolean.TRUE.equals(all)) {
+
+            if (Boolean.TRUE.equals(all)) {
+                // all=true 用于权限申请场景：只展示受访问控制的 Schema，公开资源不展示
+                // 注意层级继承：Schema 自身受限 或 父级 Instance 受限，都需要申请权限
+                schemas = schemas.stream()
+                        .filter(schema -> accessControlService.isAccessControlled("database", schema, id))
+                        .collect(Collectors.toList());
+            } else {
+                // 默认按访问控制过滤：受限 Schema 只对 Owner 和已授权用户可见
                 String userId = (String) request.getAttribute("userId");
                 if (userId != null) {
                     schemas = schemas.stream()
@@ -260,6 +279,42 @@ public class DatabaseController {
             return Result.success(detail);
         } catch (Exception e) {
             return Result.error("获取表详细信息失败: " + e.getMessage());
+        }
+    }
+
+    /**
+     * 预取所有已开启访问控制的 Schema 名称集合，用于批量判断
+     */
+    private Set<String> buildControlledSchemaSet() {
+        LambdaQueryWrapper<MetadataAccessControl> wrapper = new LambdaQueryWrapper<>();
+        wrapper.eq(MetadataAccessControl::getResourceType, "database")
+                .eq(MetadataAccessControl::getEnabled, true);
+        List<MetadataAccessControl> controls = accessControlService.list(wrapper);
+        return controls.stream()
+                .map(MetadataAccessControl::getResourceId)
+                .filter(id -> id != null && !id.isEmpty())
+                .collect(Collectors.toSet());
+    }
+
+    /**
+     * 判断指定实例下是否存在任何已开启访问控制的 Schema
+     */
+    private boolean hasControlledSchema(String instanceId, Set<String> controlledSchemaSet) {
+        if (controlledSchemaSet == null || controlledSchemaSet.isEmpty()) {
+            return false;
+        }
+        try {
+            List<String> schemaNames = databaseInstanceService.getSchemaNames(instanceId);
+            if (schemaNames == null) return false;
+            for (String name : schemaNames) {
+                if (controlledSchemaSet.contains(name)) {
+                    return true;
+                }
+            }
+            return false;
+        } catch (Exception e) {
+            log.warn("检查实例[{}]下的受限Schema失败: {}", instanceId, e.getMessage());
+            return false;
         }
     }
 }

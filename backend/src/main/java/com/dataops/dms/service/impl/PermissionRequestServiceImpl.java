@@ -21,6 +21,9 @@ public class PermissionRequestServiceImpl extends ServiceImpl<PermissionRequestM
     @javax.annotation.Resource
     private PermissionMapper permissionMapper;
 
+    @javax.annotation.Resource
+    private com.dataops.dms.service.ResourceOwnerService resourceOwnerService;
+
     @Override
     @Transactional
     public PermissionRequest submitRequest(PermissionRequest request) {
@@ -109,10 +112,51 @@ public class PermissionRequestServiceImpl extends ServiceImpl<PermissionRequestM
 
     @Override
     public List<PermissionRequest> getPendingRequests(String approverId) {
+        // approverId 为空时返回所有 pending（兼容旧代码/管理员兜底查询），否则按审批人过滤
+        LambdaQueryWrapper<PermissionRequest> wrapper = new LambdaQueryWrapper<>();
+        wrapper.eq(PermissionRequest::getStatus, "pending");
+        if (approverId != null && !approverId.isEmpty()) {
+            wrapper.eq(PermissionRequest::getApproverId, approverId);
+        }
+        wrapper.orderByDesc(PermissionRequest::getCreatedAt);
+        return this.list(wrapper);
+    }
+
+    @Override
+    public List<PermissionRequest> getUnassignedPendingRequests() {
         LambdaQueryWrapper<PermissionRequest> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(PermissionRequest::getStatus, "pending")
+               .isNull(PermissionRequest::getApproverId)
                .orderByDesc(PermissionRequest::getCreatedAt);
         return this.list(wrapper);
+    }
+
+    @Override
+    public boolean canApprove(String requestId, String userId, boolean isAdmin) {
+        if (isAdmin) return true;
+        if (userId == null || userId.isEmpty()) return false;
+        PermissionRequest request = this.getById(requestId);
+        if (request == null) return false;
+        if (userId.equals(request.getApproverId())) return true;
+        // 若是资源 Owner，也可以审批
+        if (resourceOwnerService != null && request.getResourceType() != null && request.getResourceId() != null) {
+            if (resourceOwnerService.checkIsOwner(userId, request.getResourceType(), request.getResourceId())) {
+                return true;
+            }
+            // 尝试将 resourceId 拆分为 instanceId:schemaName，匹配 schema 级 Owner
+            int idx = request.getResourceId().indexOf(':');
+            if (idx > 0 && !"instance".equals(request.getResourceType())) {
+                String schemaPart = request.getResourceId().substring(idx + 1);
+                String instancePart = request.getResourceId().substring(0, idx);
+                if (resourceOwnerService.checkIsOwner(userId, request.getResourceType(), schemaPart)) {
+                    return true;
+                }
+                if (resourceOwnerService.checkIsOwner(userId, "instance", instancePart)) {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 
     @Override

@@ -174,4 +174,22 @@ public class MetadataAccessControlServiceImpl extends ServiceImpl<MetadataAccess
         }
         return false;
     }
+
+    @Override
+    public boolean instanceHasRestrictedResources(String instanceId, List<String> schemaNames) {
+        // 1. 检查实例自身是否已开启访问控制
+        if (isAccessControlled("instance", instanceId)) {
+            return true;
+        }
+        // 2. 检查实例下是否存在至少一个 Schema 已开启访问控制
+        if (schemaNames != null && !schemaNames.isEmpty()) {
+            for (String schemaName : schemaNames) {
+                // 只检查 Schema 自身是否开启了访问控制（不继承父级，因为父级已经在上面判断过）
+                if (isAccessControlled("database", schemaName)) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
 }

@@ -26,9 +26,11 @@ public class PermissionTicketDTO {
 
     @Data
     public static class ResourceItem {
+        /** 资源类型: instance / database / table */
+        private String resourceType;
         private String instanceId;
-        private String schemaName;
         private String instanceName;
+        private String schemaName;
         /** 表级别: 可选，表名列表 */
         private List<String> tableNames;
     }
