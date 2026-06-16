@@ -61,6 +61,7 @@ public class PermissionRequestController {
         }
         wrapper.orderByDesc(PermissionRequest::getCreatedAt);
         List<PermissionRequest> list = requestService.list(wrapper);
+        enrichWithNickname(list);
         return Result.success(list);
     }
 
@@ -74,6 +75,7 @@ public class PermissionRequestController {
         } else {
             list = requestService.list();
         }
+        enrichWithNickname(list);
         return Result.success(list);
     }
 
@@ -110,6 +112,7 @@ public class PermissionRequestController {
                 list = merged;
             }
         }
+        enrichWithNickname(list);
         return Result.success(list);
     }
 
@@ -118,7 +121,9 @@ public class PermissionRequestController {
     public Result<List<PermissionRequest>> getMy(HttpServletRequest request) {
         String userId = (String) request.getAttribute("userId");
         if (userId == null) userId = "user_admin";
-        return Result.success(requestService.getMyRequests(userId));
+        List<PermissionRequest> list = requestService.getMyRequests(userId);
+        enrichWithNickname(list);
+        return Result.success(list);
     }
 
     // ==================== 工单详情 ====================
@@ -128,6 +133,7 @@ public class PermissionRequestController {
     public Result<PermissionRequest> getById(@PathVariable String id) {
         PermissionRequest req = requestService.getById(id);
         if (req == null) return Result.error(404, "工单不存在");
+        enrichWithNickname(java.util.Collections.singletonList(req));
         return Result.success(req);
     }
 
@@ -141,13 +147,15 @@ public class PermissionRequestController {
     public Result<PermissionRequest> submit(@RequestBody PermissionRequestDTO dto, HttpServletRequest request) {
         String userId = (String) request.getAttribute("userId");
         String username = (String) request.getAttribute("username");
+        String nickname = (String) request.getAttribute("nickname");
         if (userId == null) userId = "user_admin";
         if (username == null) username = "admin";
+        if (nickname == null) nickname = username;
 
         PermissionRequest req = new PermissionRequest();
         req.setId(UUID.randomUUID().toString().replace("-", ""));
         req.setApplicantId(userId);
-        req.setApplicantName(username);
+        req.setApplicantName(nickname);
         req.setResourceType(dto.getResourceType());
         req.setResourceId(dto.getResourceId());
         req.setResourceName(dto.getResourceName());
@@ -177,8 +185,10 @@ public class PermissionRequestController {
     public Result<List<PermissionRequest>> submitTicket(@RequestBody PermissionTicketDTO dto, HttpServletRequest httpRequest) {
         String userId = (String) httpRequest.getAttribute("userId");
         String username = (String) httpRequest.getAttribute("username");
+        String nickname = (String) httpRequest.getAttribute("nickname");
         if (userId == null) userId = "user_admin";
         if (username == null) username = "admin";
+        if (nickname == null) nickname = username;
 
         List<PermissionTicketDTO.ResourceItem> resources = dto.getResources();
         if (resources == null || resources.isEmpty()) {
@@ -203,7 +213,7 @@ public class PermissionRequestController {
             PermissionRequest req = new PermissionRequest();
             req.setId(UUID.randomUUID().toString().replace("-", ""));
             req.setApplicantId(userId);
-            req.setApplicantName(username);
+            req.setApplicantName(nickname);
 
             // 工单标题
             String title = dto.getTitle();
@@ -280,9 +290,10 @@ public class PermissionRequestController {
     @Operation(summary = "审批通过（自动授权）")
     public Result<Boolean> approve(@PathVariable String id, @RequestBody ApproveRequestDTO dto, HttpServletRequest request) {
         String approverId = (String) request.getAttribute("userId");
-        String approverName = (String) request.getAttribute("username");
+        String approverName = (String) request.getAttribute("nickname");
         Boolean isAdmin = (Boolean) request.getAttribute("isAdmin");
         if (approverId == null) approverId = "user_admin";
+        if (approverName == null) approverName = (String) request.getAttribute("username");
         if (approverName == null) approverName = "admin";
 
         if (!requestService.canApprove(id, approverId, Boolean.TRUE.equals(isAdmin))) {
@@ -297,9 +308,10 @@ public class PermissionRequestController {
     @Operation(summary = "审批拒绝")
     public Result<Boolean> reject(@PathVariable String id, @RequestBody ApproveRequestDTO dto, HttpServletRequest request) {
         String approverId = (String) request.getAttribute("userId");
-        String approverName = (String) request.getAttribute("username");
+        String approverName = (String) request.getAttribute("nickname");
         Boolean isAdmin = (Boolean) request.getAttribute("isAdmin");
         if (approverId == null) approverId = "user_admin";
+        if (approverName == null) approverName = (String) request.getAttribute("username");
         if (approverName == null) approverName = "admin";
 
         if (!requestService.canApprove(id, approverId, Boolean.TRUE.equals(isAdmin))) {
@@ -358,7 +370,7 @@ public class PermissionRequestController {
                 resourceOwnerService.listByResource(resourceType, resourceId);
         if (owners != null && !owners.isEmpty()) {
             com.dataops.dms.entity.ResourceOwner owner = owners.get(0);
-            return new String[] { owner.getOwnerUserId(), owner.getOwnerUsername() };
+            return new String[] { owner.getOwnerUserId(), resolveNickname(owner.getOwnerUserId(), owner.getOwnerUsername()) };
         }
 
         // 2) 父级资源 Owner
@@ -367,7 +379,7 @@ public class PermissionRequestController {
                     resourceOwnerService.listByResource(parentResourceType, parentResourceId);
             if (parentOwners != null && !parentOwners.isEmpty()) {
                 com.dataops.dms.entity.ResourceOwner owner = parentOwners.get(0);
-                return new String[] { owner.getOwnerUserId(), owner.getOwnerUsername() };
+                return new String[] { owner.getOwnerUserId(), resolveNickname(owner.getOwnerUserId(), owner.getOwnerUsername()) };
             }
         }
 
@@ -378,11 +390,104 @@ public class PermissionRequestController {
             wrapper.eq(com.dataops.dms.entity.User::getIsAdmin, true).last("LIMIT 1");
             com.dataops.dms.entity.User admin = userMapper.selectOne(wrapper);
             if (admin != null) {
-                return new String[] { admin.getId(), admin.getUsername() };
+                return new String[] { admin.getId(), resolveNickname(admin.getId(), admin.getUsername()) };
             }
         } catch (Exception ignored) { }
 
         return new String[] { null, null };
+    }
+
+    private String resolveNickname(String userId, String fallbackUsername) {
+        if (userId == null) return fallbackUsername;
+        try {
+            com.dataops.dms.entity.User user = userMapper.selectById(userId);
+            if (user != null && user.getNickname() != null && !user.getNickname().isEmpty()) {
+                return user.getNickname();
+            }
+        } catch (Exception ignored) { }
+        return fallbackUsername != null ? fallbackUsername : userId;
+    }
+
+    /**
+     * 根据 userId 批量回填昵称（优先用 User 表的 nickname，其次 username）。
+     * 这是展示层的修正：工单表中的 applicantName/approverName 可能存的是旧 username，
+     * 返回给前端前统一替换为最新的用户昵称。
+     * Fallback：如果 applicant_id 为空（历史数据），用 applicant_name（即登录账号 username）反向查用户，再取昵称。
+     * 注意：只用 username 是稳定的登录账号，不会随用户改昵称而变化，比 nickname 反查更可靠。
+     */
+    private void enrichWithNickname(List<PermissionRequest> list) {
+        if (list == null || list.isEmpty()) return;
+        try {
+            java.util.Set<String> userIds = new java.util.HashSet<>();
+            java.util.Set<String> usernameHints = new java.util.HashSet<>();
+            for (PermissionRequest r : list) {
+                if (r.getApplicantId() != null && !r.getApplicantId().isEmpty()) {
+                    userIds.add(r.getApplicantId());
+                } else if (r.getApplicantName() != null && !r.getApplicantName().isEmpty()) {
+                    usernameHints.add(r.getApplicantName());
+                }
+                if (r.getApproverId() != null && !r.getApproverId().isEmpty()) {
+                    userIds.add(r.getApproverId());
+                } else if (r.getApproverName() != null && !r.getApproverName().isEmpty()) {
+                    usernameHints.add(r.getApproverName());
+                }
+            }
+
+            java.util.Map<String, String> idToName = new java.util.HashMap<>();
+            java.util.Map<String, String> usernameToNickname = new java.util.HashMap<>();
+
+            // 1) 优先按 userId 批量查
+            if (!userIds.isEmpty()) {
+                try {
+                    List<com.dataops.dms.entity.User> users = userMapper.selectBatchIds(userIds);
+                    if (users != null) {
+                        for (com.dataops.dms.entity.User u : users) {
+                            String displayName = (u.getNickname() != null && !u.getNickname().isEmpty())
+                                    ? u.getNickname() : u.getUsername();
+                            idToName.put(u.getId(), displayName);
+                            if (u.getUsername() != null) usernameToNickname.put(u.getUsername(), displayName);
+                        }
+                    }
+                } catch (Exception ignored) { }
+            }
+
+            // 2) Fallback：历史工单没有 applicant_id，用 applicant_name（登录账号）反向查用户
+            if (!usernameHints.isEmpty()) {
+                java.util.Set<String> missingUsernames = new java.util.HashSet<>();
+                for (String uname : usernameHints) {
+                    if (!usernameToNickname.containsKey(uname)) missingUsernames.add(uname);
+                }
+                if (!missingUsernames.isEmpty()) {
+                    try {
+                        LambdaQueryWrapper<com.dataops.dms.entity.User> w = new LambdaQueryWrapper<>();
+                        w.in(com.dataops.dms.entity.User::getUsername, missingUsernames);
+                        List<com.dataops.dms.entity.User> matched = userMapper.selectList(w);
+                        if (matched != null) {
+                            for (com.dataops.dms.entity.User u : matched) {
+                                String displayName = (u.getNickname() != null && !u.getNickname().isEmpty())
+                                        ? u.getNickname() : u.getUsername();
+                                if (u.getUsername() != null)
+                                    usernameToNickname.put(u.getUsername(), displayName);
+                            }
+                        }
+                    } catch (Exception ignored) { }
+                }
+            }
+
+            // 3) 回填
+            for (PermissionRequest r : list) {
+                if (r.getApplicantId() != null && idToName.containsKey(r.getApplicantId())) {
+                    r.setApplicantName(idToName.get(r.getApplicantId()));
+                } else if (r.getApplicantName() != null && usernameToNickname.containsKey(r.getApplicantName())) {
+                    r.setApplicantName(usernameToNickname.get(r.getApplicantName()));
+                }
+                if (r.getApproverId() != null && idToName.containsKey(r.getApproverId())) {
+                    r.setApproverName(idToName.get(r.getApproverId()));
+                } else if (r.getApproverName() != null && usernameToNickname.containsKey(r.getApproverName())) {
+                    r.setApproverName(usernameToNickname.get(r.getApproverName()));
+                }
+            }
+        } catch (Exception ignored) { }
     }
 
     private String resolveTypeLabel(String ticketType) {

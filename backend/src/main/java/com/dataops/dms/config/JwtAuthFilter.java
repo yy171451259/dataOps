@@ -92,16 +92,21 @@ public class JwtAuthFilter extends OncePerRequestFilter {
         request.setAttribute("userId", userId);
         request.setAttribute("username", username);
 
-        // 查询是否为管理员，放入 request attribute
+        // 查询是否为管理员，以及昵称，放入 request attribute
         try {
             com.dataops.dms.entity.User user = userMapper.selectById(userId);
             if (user != null) {
                 request.setAttribute("isAdmin", Boolean.TRUE.equals(user.getIsAdmin()));
+                String displayName = user.getNickname();
+                if (displayName == null || displayName.isEmpty()) displayName = username;
+                request.setAttribute("nickname", displayName);
             } else {
                 request.setAttribute("isAdmin", false);
+                request.setAttribute("nickname", username);
             }
         } catch (Exception e) {
             request.setAttribute("isAdmin", false);
+            request.setAttribute("nickname", username);
         }
 
         filterChain.doFilter(request, response);

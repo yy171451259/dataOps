@@ -29,8 +29,8 @@ interface PermissionRequest {
   approverId?: string;
   approverName?: string;
   approverComment?: string;
-  createTime: string;
-  updateTime?: string;
+  createdAt: string;
+  approvedAt?: string;
 }
 
 const statusMap: Record<string, { color: string; text: string }> = {
@@ -68,6 +68,7 @@ const PermissionRequestPage: React.FC = () => {
   // Tab 1: 我的申请
   const [myRequests, setMyRequests] = useState<PermissionRequest[]>([]);
   const [myLoading, setMyLoading] = useState(false);
+  const [statusFilter, setStatusFilter] = useState<string>('all');
 
   // Tab 2: 新建申请
   const [submitForm] = Form.useForm();
@@ -253,27 +254,23 @@ const PermissionRequestPage: React.FC = () => {
       render: (id: string) => <span style={{ fontFamily: 'monospace' }}>{id ? id.slice(0, 10) : '-'}</span>,
     },
     {
-      title: '原因', dataIndex: 'resourceName', key: 'reason', width: 240,
+      title: '资源', dataIndex: 'resourceName', key: 'resource', width: 280,
       render: (_: string, r: PermissionRequest) => (
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <Tag color="default" style={{ marginRight: 0 }}>{resourceTypeLabels[r.resourceType] || r.resourceType}</Tag>
           <span style={{ color: '#222' }}>{r.resourceName || '-'}</span>
-          {r.reason && (
-            <Tooltip title={r.reason}>
-              <span style={{ color: '#999', fontSize: 12, marginLeft: 8 }}>
-                ({r.reason.length > 20 ? r.reason.slice(0, 20) + '...' : r.reason})
-              </span>
-            </Tooltip>
-          )}
         </div>
       ),
     },
     {
-      title: '工单类型', dataIndex: 'resourceType', key: 'ticketType', width: 120,
-      render: (t: string) => {
-        const label = resourceTypeLabels[t] || t;
-        return <Tag color="geekblue">{label}权限</Tag>;
-      },
+      title: '申请原因', dataIndex: 'reason', key: 'reason', width: 240,
+      render: (t: string) => (
+        <Tooltip title={t}>
+          <span style={{ color: '#555' }}>
+            {t ? (t.length > 20 ? t.slice(0, 20) + '...' : t) : '-'}
+          </span>
+        </Tooltip>
+      ),
     },
     {
       title: '当前状态', dataIndex: 'status', key: 'status', width: 100,
@@ -291,14 +288,14 @@ const PermissionRequestPage: React.FC = () => {
       render: (n: string, r: PermissionRequest) => n || r.approverId || '-',
     },
     {
-      title: '创建时间', dataIndex: 'createTime', key: 'createTime', width: 170,
+      title: '申请时间', dataIndex: 'createdAt', key: 'createdAt', width: 170,
       render: (t: string) => t ? dayjs(t).format('YYYY-MM-DD HH:mm:ss') : '-',
-      sorter: (a: any, b: any) => dayjs(a.createTime).valueOf() - dayjs(b.createTime).valueOf(),
+      sorter: (a: any, b: any) => dayjs(a.createdAt).valueOf() - dayjs(b.createdAt).valueOf(),
     },
     {
-      title: '最后操作时间', dataIndex: 'updateTime', key: 'updateTime', width: 170,
+      title: '审批时间', dataIndex: 'approvedAt', key: 'approvedAt', width: 170,
       render: (t: string) => t ? dayjs(t).format('YYYY-MM-DD HH:mm:ss') : '-',
-      sorter: (a: any, b: any) => dayjs(a.updateTime || a.createTime).valueOf() - dayjs(b.updateTime || b.createTime).valueOf(),
+      sorter: (a: any, b: any) => dayjs(a.approvedAt || a.createdAt).valueOf() - dayjs(b.approvedAt || b.createdAt).valueOf(),
     },
     {
       title: '操作', key: 'action', width: 130, fixed: 'right' as const,
@@ -323,18 +320,32 @@ const PermissionRequestPage: React.FC = () => {
       label: '我的申请',
       children: (
         <Card>
-          <div style={{ marginBottom: 16 }}>
+          <div style={{ marginBottom: 16, display: 'flex', gap: 12, alignItems: 'center' }}>
             <Button icon={<ReloadOutlined />} onClick={loadMyRequests} loading={myLoading}>
               刷新
             </Button>
+            <Select
+              value={statusFilter}
+              onChange={setStatusFilter}
+              style={{ width: 140 }}
+              allowClear
+              placeholder="筛选状态"
+              options={[
+                { value: 'all', label: '全部状态' },
+                { value: 'pending', label: '待审批' },
+                { value: 'approved', label: '已通过' },
+                { value: 'rejected', label: '已拒绝' },
+                { value: 'cancelled', label: '已撤销' },
+              ]}
+            />
           </div>
           <Table
-            dataSource={myRequests}
+            dataSource={myRequests.filter((r: PermissionRequest) => statusFilter === 'all' ? true : r.status === statusFilter)}
             columns={myColumns}
             rowKey="id"
             loading={myLoading}
             pagination={{ pageSize: 15, showTotal: (t: number) => `共 ${t} 条申请` }}
-            scroll={{ x: 1500 }}
+            scroll={{ x: 1700 }}
             size="small"
             locale={{ emptyText: <Empty description="暂无申请记录" /> }}
           />
@@ -642,8 +653,8 @@ function parseReasonExtra(reason: string): { info: DetailResourceInfo | null; pl
 
 const RequestDetail: React.FC<{ request: PermissionRequest }> = ({ request }) => {
   const { info, plainText } = parseReasonExtra(request.reason || '');
-  const createTime = (request as any).createdAt || (request as any).createTime;
-  const updateTime = (request as any).approvedAt || (request as any).updateTime;
+  const createTime = request.createdAt;
+  const updateTime = request.approvedAt;
   const perms = request.permissions && request.permissions.length > 0
     ? request.permissions
     : (request as any).requestedPermissions
