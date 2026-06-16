@@ -1769,7 +1769,7 @@ const SqlEditor: React.FC<SqlEditorProps> = () => {
 
                 },
 
-                { title: 'é?, dataIndex: 'key', key: 'key', width: 50,
+                { title: '键', dataIndex: 'key', key: 'key', width: 50,
 
                   render: (v: string) => v && <span style={{ color: '#722ed1', fontSize: 11 }}>{v}</span>,
 
