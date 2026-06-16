@@ -1,0 +1,104 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL"
+             xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+             xmlns:flowable="http://flowable.org/bpmn"
+             xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
+             xmlns:omgdc="http://www.omg.org/spec/DD/20100524/DC"
+             xmlns:omgdi="http://www.omg.org/spec/DD/20100524/DI"
+             typeLanguage="http://www.w3.org/2001/XMLSchema"
+             expressionLanguage="http://www.w3.org/1999/XPath"
+             targetNamespace="http://dataops-dms.com/process">
+
+    <!-- 数据变更审批流程 -->
+    <process id="dataChangeProcess" name="数据变更审批流程" isExecutable="true">
+        
+        <!-- 开始节点 -->
+        <startEvent id="start" name="提交工单">
+            <outgoing>startToManagerApprove</outgoing>
+        </startEvent>
+
+        <!-- 项目经理审批 -->
+        <userTask id="managerApprove" name="项目经理审批" flowable:assignee="${managerId}">
+            <incoming>startToManagerApprove</incoming>
+            <outgoing>managerApproveToGateway</outgoing>
+        </userTask>
+
+        <!-- 项目经理审批网关 -->
+        <exclusiveGateway id="managerGateway" name="审批结果">
+            <incoming>managerApproveToGateway</incoming>
+            <outgoing>managerApproveToDbaApprove</outgoing>
+            <outgoing>managerRejectToEnd</outgoing>
+        </exclusiveGateway>
+
+        <!-- 条件流转：项目经理通过 -->
+        <sequenceFlow id="managerApproveToDbaApprove" name="通过" 
+                      sourceRef="managerGateway" targetRef="dbaApprove">
+            <conditionExpression xsi:type="tFormalExpression">
+                <![CDATA[${approved == true}]]>
+            </conditionExpression>
+        </sequenceFlow>
+
+        <!-- 条件流转：项目经理拒绝 -->
+        <sequenceFlow id="managerRejectToEnd" name="拒绝" 
+                      sourceRef="managerGateway" targetRef="rejectedEnd">
+            <conditionExpression xsi:type="tFormalExpression">
+                <![CDATA[${approved == false}]]>
+            </conditionExpression>
+        </sequenceFlow>
+
+        <!-- DBA审批 -->
+        <userTask id="dbaApprove" name="DBA审批" flowable:assignee="${dbaId}">
+            <incoming>managerApproveToDbaApprove</incoming>
+            <outgoing>dbaApproveToGateway</outgoing>
+        </userTask>
+
+        <!-- DBA审批网关 -->
+        <exclusiveGateway id="dbaGateway" name="审批结果">
+            <incoming>dbaApproveToGateway</incoming>
+            <outgoing>dbaApproveToExecute</outgoing>
+            <outgoing>dbaRejectToEnd</outgoing>
+        </exclusiveGateway>
+
+        <!-- 条件流转：DBA通过 -->
+        <sequenceFlow id="dbaApproveToExecute" name="通过" 
+                      sourceRef="dbaGateway" targetRef="executeSql">
+            <conditionExpression xsi:type="tFormalExpression">
+                <![CDATA[${approved == true}]]>
+            </conditionExpression>
+        </sequenceFlow>
+
+        <!-- 条件流转：DBA拒绝 -->
+        <sequenceFlow id="dbaRejectToEnd" name="拒绝" 
+                      sourceRef="dbaGateway" targetRef="rejectedEnd">
+            <conditionExpression xsi:type="tFormalExpression">
+                <![CDATA[${approved == false}]]>
+            </conditionExpression>
+        </sequenceFlow>
+
+        <!-- 自动执行SQL -->
+        <serviceTask id="executeSql" name="执行SQL变更" 
+                     flowable:class="com.dataops.dms.workflow.SqlExecuteDelegate">
+            <incoming>dbaApproveToExecute</incoming>
+            <outgoing>executeToEnd</outgoing>
+        </serviceTask>
+
+        <!-- 正常结束 -->
+        <endEvent id="successEnd" name="执行完成">
+            <incoming>executeToEnd</incoming>
+        </endEvent>
+
+        <!-- 拒绝结束 -->
+        <endEvent id="rejectedEnd" name="已拒绝">
+            <incoming>managerRejectToEnd</incoming>
+            <incoming>dbaRejectToEnd</incoming>
+        </endEvent>
+
+        <!-- 连线定义 -->
+        <sequenceFlow id="startToManagerApprove" sourceRef="start" targetRef="managerApprove" />
+        <sequenceFlow id="managerApproveToGateway" sourceRef="managerApprove" targetRef="managerGateway" />
+        <sequenceFlow id="dbaApproveToGateway" sourceRef="dbaApprove" targetRef="dbaGateway" />
+        <sequenceFlow id="executeToEnd" sourceRef="executeSql" targetRef="successEnd" />
+
+    </process>
+
+</definitions>

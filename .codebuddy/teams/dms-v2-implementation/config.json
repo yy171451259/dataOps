@@ -1,0 +1,18 @@
+{
+  "name": "dms-v2-implementation",
+  "leadAgentId": "79d8ebb6b66c49cab502ebada7284dbd",
+  "workspacePath": "c:/Users/Administrator/Documents/dataOps",
+  "createdAt": "2026-06-10T11:30:17.798Z",
+  "options": {
+    "workspacePath": "c:/Users/Administrator/Documents/dataOps",
+    "isAutoTeam": false
+  },
+  "members": [
+    {
+      "memberId": "team-lead@dms-v2-implementation",
+      "name": "team-lead",
+      "role": "Team Lead - coordinates the team and interacts with the user"
+    }
+  ],
+  "isAutoTeam": false
+}

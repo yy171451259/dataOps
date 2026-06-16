@@ -1,0 +1,1403 @@
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
+import Editor, { OnMount } from '@monaco-editor/react';
+import {
+  Button, Table, message, Select, Tabs, Dropdown, Tooltip, Tag,
+  Drawer, Modal, Popconfirm, Divider, Empty, Space, Input, Rate,
+  Form, Alert, Radio, Row, Col,
+} from 'antd';
+import {
+  PlayCircleOutlined, FormatPainterOutlined,
+  HistoryOutlined, StarOutlined, StarFilled, ThunderboltOutlined, ExperimentOutlined,
+  SafetyOutlined, CheckCircleOutlined, WarningOutlined,
+  CopyOutlined, DeleteOutlined, EditOutlined,
+  SearchOutlined, PlusOutlined, ClockCircleOutlined, FireOutlined,
+  DatabaseOutlined, CloseOutlined, SettingOutlined, DownOutlined,
+  FileTextOutlined, TableOutlined, UpOutlined,
+  ProfileOutlined, DownloadOutlined,
+  StopOutlined, SendOutlined,
+} from '@ant-design/icons';
+import dayjs from 'dayjs';
+import { useAppStore } from '../store/useAppStore';
+import { sqlApi, instanceApi, exportApi, ticketApi } from '../utils/api';
+import { createSqlCompletionProvider, SchemaInfo } from './SqlCompletionProvider';
+import ObjectBrowser from './ObjectBrowser';
+
+const { TextArea } = Input;
+
+// ==================== Types ====================
+interface QueryResult {
+  columns: string[];
+  data: any[];
+  affectRows?: number;
+  executionTime?: number;
+  success?: boolean;
+  errorMessage?: string;
+  hasMore?: boolean;
+  executedSql?: string;
+  _dataChangeBlocked?: boolean;
+}
+
+interface SqlEditorProps {
+  databaseId?: string;
+}
+
+const MIN_EDITOR_HEIGHT = 150;
+
+// ==================== 底部面板：我的SQL/收藏/执行历史 ====================
+interface BottomPanelProps {
+  visible: boolean;
+  activeTabData: any;
+  onUseQuery: (sql: string) => void;
+}
+
+const BottomPanel: React.FC<BottomPanelProps> = ({ visible, activeTabData, onUseQuery }) => {
+  const [panelTab, setPanelTab] = useState<string>('favorites');
+  const [searchText, setSearchText] = useState('');
+  const [editModalOpen, setEditModalOpen] = useState(false);
+  const [editingQuery, setEditingQuery] = useState<any>(null);
+  const [editForm, setEditForm] = useState({ name: '', sql: '' });
+
+  const {
+    savedQueries, addSavedQuery, updateSavedQuery, deleteSavedQuery,
+    toggleFavorite, executionHistory, clearExecutionHistory,
+  } = useAppStore();
+
+  const dbFilteredQueries = useMemo(() => {
+    if (!activeTabData?.databaseId) return savedQueries;
+    return savedQueries.filter(q =>
+      (!q.databaseId || q.databaseId === activeTabData.databaseId) &&
+      (!q.databaseName || q.databaseName === activeTabData.databaseName)
+    );
+  }, [savedQueries, activeTabData?.databaseId, activeTabData?.databaseName]);
+
+  const dbFilteredHistory = useMemo(() => {
+    if (!activeTabData?.databaseId) return executionHistory;
+    return executionHistory.filter(h =>
+      h.databaseId === activeTabData.databaseId &&
+      h.databaseName === activeTabData.databaseName
+    );
+  }, [executionHistory, activeTabData?.databaseId, activeTabData?.databaseName]);
+
+  const filteredSavedQueries = useMemo(() => {
+    if (!searchText.trim()) return dbFilteredQueries;
+    const kw = searchText.toLowerCase();
+    return dbFilteredQueries.filter(q =>
+      q.name.toLowerCase().includes(kw) || q.sql.toLowerCase().includes(kw)
+    );
+  }, [dbFilteredQueries, searchText]);
+
+  const filteredHistory = useMemo(() => {
+    if (!searchText.trim()) return dbFilteredHistory;
+    const kw = searchText.toLowerCase();
+    return dbFilteredHistory.filter(h => h.sql.toLowerCase().includes(kw));
+  }, [dbFilteredHistory, searchText]);
+
+  const getPopularityRate = (count: number): number => {
+    if (count >= 20) return 5; if (count >= 10) return 4;
+    if (count >= 5) return 3; if (count >= 2) return 2;
+    return count >= 1 ? 1 : 0;
+  };
+
+  const getAvgDuration = (totalDuration: number, count: number): number =>
+    count > 0 ? Math.round(totalDuration / count) : 0;
+
+  const handleAddFavorite = () => {
+    if (!activeTabData?.sql?.trim()) { message.warning('当前编辑器没有SQL内容'); return; }
+    const existing = savedQueries.find(q => q.sql.trim() === activeTabData.sql.trim());
+    if (existing) {
+      if (existing.isFavorite) {
+        toggleFavorite(existing.id);
+        message.success('å·²åæ¶æ¶è?);
+      } else {
+        toggleFavorite(existing.id);
+        message.success('å·²æ·»å æ¶è?);
+      }
+    } else {
+      addSavedQuery({
+        name: `查询 ${savedQueries.length + 1}`,
+        sql: activeTabData.sql,
+        databaseId: activeTabData.databaseId,
+        databaseName: activeTabData.databaseName,
+        isFavorite: true,
+      });
+      message.success('å·²æ·»å æ¶è?);
+    }
+  };
+
+  const handleEdit = (query: any) => {
+    setEditingQuery(query); setEditForm({ name: query.name, sql: query.sql }); setEditModalOpen(true);
+  };
+  const doEdit = () => {
+    if (!editForm.name.trim()) { message.error('è¯·è¾å¥åç§?); return; }
+    updateSavedQuery(editingQuery.id, { name: editForm.name, sql: editForm.sql });
+    message.success('更新成功'); setEditModalOpen(false);
+  };
+  const handleDoubleClickUse = (sql: string) => onUseQuery(sql);
+
+  const savedColumns = [
+    { title: '名称', dataIndex: 'name', key: 'name', width: 180, ellipsis: true,
+      render: (name: string, record: any) => (
+        <span style={{ cursor: 'pointer' }} onClick={() => handleDoubleClickUse(record.sql)}>
+          {record.isFavorite && <StarFilled style={{ color: '#faad14', marginRight: 4 }} />}{name}
+        </span>
+      ),
+    },
+    { title: 'SQL内容', dataIndex: 'sql', key: 'sql', ellipsis: true,
+      render: (sql: string, record: any) => (
+        <span style={{ fontFamily: 'Consolas,Monaco', fontSize: 12, color: '#666', cursor: 'pointer' }}
+          onClick={() => handleDoubleClickUse(record.sql)}>
+          {sql.length > 80 ? sql.slice(0, 80) + '...' : sql}
+        </span>
+      ),
+    },
+    { title: '频次', dataIndex: 'executeCount', key: 'executeCount', width: 50, align: 'center',
+      sorter: (a: any, b: any) => a.executeCount - b.executeCount },
+    { title: 'æè¿ä½¿ç¨æ¶é?, dataIndex: 'lastExecutedAt', key: 'lastExecutedAt', width: 160,
+      render: (t: string) => t ? dayjs(t).format('YYYY-MM-DD HH:mm:ss') : '-',
+      sorter: (a: any, b: any) => (a.lastExecutedAt || '').localeCompare(b.lastExecutedAt || '') },
+    { title: '热度', key: 'popularity', width: 100, align: 'center',
+      render: (_: any, record: any) => <Rate value={getPopularityRate(record.executeCount)} disabled count={5} style={{ fontSize: 12 }} /> },
+    { title: '平均耗时', key: 'avgDuration', width: 90, align: 'right',
+      render: (_: any, record: any) => <span>{getAvgDuration(record.totalDuration, record.executeCount)}ms</span>,
+      sorter: (a: any, b: any) => getAvgDuration(a.totalDuration, a.executeCount) - getAvgDuration(b.totalDuration, b.executeCount),
+    },
+    { title: '操作', key: 'action', width: 120, fixed: 'right' as const,
+      render: (_: any, record: any) => (
+        <Space size={2}>
+          <Button type="link" size="small" style={{ padding: 0 }} onClick={() => handleDoubleClickUse(record.sql)}>编辑</Button>
+          <Button type="link" size="small" danger style={{ padding: 0 }} icon={<DeleteOutlined />}
+            onClick={(e) => { e.stopPropagation(); deleteSavedQuery(record.id); message.success('å·²å é?); }} />
+        </Space>
+      ),
+    },
+  ];
+
+  const historyColumns = [
+    { title: 'SQL', dataIndex: 'sql', key: 'sql', ellipsis: true,
+      render: (sql: string, record: any) => (
+        <span style={{ fontFamily: 'Consolas,Monaco', fontSize: 12, color: '#666', cursor: 'pointer' }}
+          onClick={() => handleDoubleClickUse(sql)}>
+          {sql.length > 100 ? sql.slice(0, 100) + '...' : sql}
+        </span>
+      ),
+    },
+    { title: 'æ°æ®åº?, key: 'database', width: 140, render: (_: any, r: any) => r.databaseName || r.databaseId || '-' },
+    { title: '耗时', dataIndex: 'executionTime', key: 'executionTime', width: 90, align: 'right',
+      render: (t: number) => `${t}ms`, sorter: (a: any, b: any) => a.executionTime - b.executionTime },
+    { title: '行数', key: 'rows', width: 70, align: 'center', render: (_: any, r: any) => r.rowCount ?? r.affectRows ?? '-' },
+    { title: 'ç¶æ?, dataIndex: 'success', key: 'success', width: 60, align: 'center',
+      render: (ok: boolean) => <Tag color={ok ? 'success' : 'error'}>{ok ? '成功' : '失败'}</Tag> },
+    { title: '时间', dataIndex: 'executedAt', key: 'executedAt', width: 160,
+      render: (t: string) => dayjs(t).format('YYYY-MM-DD HH:mm:ss'),
+      sorter: (a: any, b: any) => a.executedAt.localeCompare(b.executedAt) },
+  ];
+
+  if (!visible) return null;
+
+  return (
+    <div className="dbeaver-bottom-panel" style={{
+      background: '#fff', display: 'flex', flexDirection: 'column',
+      flex: 1, overflow: 'hidden',
+    }}>
+      <Tabs activeKey={panelTab} onChange={setPanelTab} size="small"
+        style={{ margin: 0, paddingLeft: 8, minHeight: 34, flexShrink: 0 }}
+        items={[
+          { key: 'favorites', label: <span><StarOutlined /> 收藏 <Tag style={{ marginLeft: 4, fontSize: 10 }}>{filteredSavedQueries.length}</Tag></span> },
+          { key: 'history', label: <span><ClockCircleOutlined /> 历史 <Tag style={{ marginLeft: 4, fontSize: 10 }}>{filteredHistory.length}</Tag></span> },
+        ]}
+        tabBarExtraContent={
+          <Space size={4} style={{ paddingRight: 4 }}>
+            <Input placeholder="搜索..." prefix={<SearchOutlined style={{ color: '#bfbfbf' }} />} size="small"
+              allowClear value={searchText} onChange={e => setSearchText(e.target.value)} style={{ width: 180 }} />
+            <Button size="small" icon={<StarOutlined />} onClick={handleAddFavorite}>添加收藏</Button>
+          </Space>
+        }
+      />
+
+      <div style={{ flex: 1, overflow: 'auto', padding: '0 8px 8px' }}>
+        {panelTab === 'favorites' && (
+          <Table dataSource={filteredSavedQueries}
+            columns={savedColumns as any} rowKey="id" size="small"
+            pagination={{ pageSize: 7, size: 'small', showTotal: t => `${t} 条` }} scroll={{ x: 1000 }}
+            locale={{ emptyText: <Empty description={searchText ? 'æ å¹éç»æ? : '暂无保存的SQL'} /> }}
+            onRow={(record) => ({ onDoubleClick: () => handleDoubleClickUse(record.sql), style: { cursor: 'pointer' } })}
+          />
+        )}
+        {panelTab === 'history' && (
+          <Table dataSource={filteredHistory} columns={historyColumns} rowKey="id" size="small"
+            pagination={{ pageSize: 7, size: 'small', showTotal: t => `${t} 条` }} scroll={{ x: 800 }}
+            locale={{ emptyText: <Empty description={searchText ? 'æ å¹éè®°å½? : '暂无执行记录'} /> }}
+            onRow={(record) => ({ onDoubleClick: () => handleDoubleClickUse(record.sql), style: { cursor: 'pointer' } })}
+          />
+        )}
+      </div>
+
+      {/* 编辑弹窗 */}
+      <Modal title={<><EditOutlined /> 编辑查询</>} open={editModalOpen} onOk={doEdit} onCancel={() => setEditModalOpen(false)}
+        okText="更新" cancelText="取消" width={600}>
+        <div style={{ marginBottom: 12 }}><div style={{ marginBottom: 6 }}>名称</div>
+          <Input value={editForm.name} onChange={e => setEditForm(f => ({ ...f, name: e.target.value }))} /></div>
+        <div style={{ marginBottom: 12 }}><div style={{ marginBottom: 6 }}>SQL语句</div>
+          <TextArea rows={8} value={editForm.sql} onChange={e => setEditForm(f => ({ ...f, sql: e.target.value }))} style={{ fontSize: 12 }} /></div>
+      </Modal>
+    </div>
+  );
+};
+
+// ==================== 执行统计结果面板（DBeaver é£æ ¼ï¼?====================
+interface ExecutionStatsProps {
+  result: QueryResult | undefined;
+}
+
+const ExecutionStats: React.FC<ExecutionStatsProps> = ({ result }) => {
+  if (!result) return null;
+
+  // 判断是否为数据结果集还是DDL/DML执行统计
+  const isDataSet = result.columns && result.columns.length > 0 &&
+    !(result.columns.length === 1 && result.columns[0] === 'result');
+
+  // 构建DBeaveré£æ ¼ç?Name-Value ç»è®¡è¡?  const statsRows: { name: string; value: string | number }[] = [];
+
+  if (isDataSet) {
+    statsRows.push(
+      { name: 'Rows fetched', value: result.data?.length ?? 0 },
+      { name: 'Columns', value: result.columns?.length ?? 0 },
+    );
+  }
+  if (result.affectRows !== undefined) {
+    statsRows.push({ name: 'Updated Rows', value: result.affectRows });
+  }
+  statsRows.push(
+    { name: 'Execute time', value: `${result.executionTime ?? 0}s` },
+    { name: 'Start time', value: dayjs().format('YYYY-MM-DD HH:mm:ss') },
+    { name: 'Finish time', value: dayjs().format('YYYY-MM-DD HH:mm:ss') },
+  );
+
+  if (!isDataSet && result.errorMessage) {
+    statsRows.push({ name: 'Error', value: result.errorMessage });
+  }
+
+  const statColumns = [
+    { title: 'Name', dataIndex: 'name', key: 'name', width: 140,
+      render: (text: string) => <span style={{ fontFamily: '"Segoe UI", sans-serif', fontSize: 12, fontWeight: 500 }}>{text}</span> },
+    { title: 'Value', dataIndex: 'value', key: 'value',
+      render: (val: any) => <span style={{ fontFamily: 'Consolas, Monaco, monospace', fontSize: 12 }}>{val}</span> },
+  ];
+
+  return (
+    <Table
+      dataSource={statsRows.map((r, i) => ({ ...r, _key: i }))}
+      columns={statColumns}
+      rowKey="_key"
+      size="small"
+      pagination={false}
+      showHeader={true}
+      bordered={false}
+      style={{ fontSize: 12 }}
+      className="dbeaver-exec-stats-table"
+    />
+  );
+};
+
+// ==================== SQL ç±»åæ£æµ?====================
+const READ_ONLY_KEYWORDS = ['SELECT', 'SHOW', 'DESCRIBE', 'DESC', 'EXPLAIN', 'WITH'];
+
+/** 检测SQL是否为数据变更操作（DML/DDL），需要走工单流程 */
+const isDataChangeSQL = (sql: string): boolean => {
+  // å»é¤æ³¨éåé¦å°¾ç©ºç?  let cleaned = sql
+    .replace(/--.*$/gm, '')           // è¡æ³¨é?    .replace(/\/\*[\s\S]*?\*\//g, '') // åæ³¨é?    .trim();
+  // å»é¤å¼å¤´æ¬å·ï¼å¦?(SELECT ...)ï¼?  cleaned = cleaned.replace(/^[(\s]+/, '');
+  // 获取第一个关键词
+  const firstWord = cleaned.match(/^\w+/)?.[0]?.toUpperCase() || '';
+  if (!firstWord) return false;
+  return !READ_ONLY_KEYWORDS.includes(firstWord);
+};
+
+/** 根据SQL自动判断变更类型 */
+const detectChangeType = (sql: string): string => {
+  const cleaned = sql.replace(/--.*$/gm, '').replace(/\/\*[\s\S]*?\*\//g, '').trim().replace(/^[(\s]+/, '');
+  const firstWord = cleaned.match(/^\w+/)?.[0]?.toUpperCase() || '';
+  // DDL类关键词
+  if (['ALTER', 'CREATE', 'DROP', 'TRUNCATE', 'RENAME'].includes(firstWord)) return 'DDL';
+  // DML类关键词
+  if (['INSERT', 'UPDATE', 'DELETE', 'REPLACE', 'MERGE'].includes(firstWord)) return 'DML';
+  return 'DML'; // 默认DML
+};
+
+// ==================== ä¸?SQL å·¥ä½å?â?DBeaver 布局 ====================
+
+const SqlEditor: React.FC<SqlEditorProps> = () => {
+  const navigate = useNavigate();
+  const { sqlTabs, activeTab, setActiveTab, addTab, removeTab, updateTab, savedQueries } = useAppStore();
+  const activeTabData = sqlTabs.find(t => t.key === activeTab) || sqlTabs[0] || null;
+
+  const [loading, setLoading] = useState(false);
+  const [results, setResults] = useState<Record<string, QueryResult[]>>({});
+  const [paginationLoading, setPaginationLoading] = useState(false);
+  const resultContainerRef = useRef<HTMLDivElement>(null);
+  const [explainLoading, setExplainLoading] = useState(false);
+  const [explainResult, setExplainResult] = useState<QueryResult | null>(null);
+  const [explainDrawerOpen, setExplainDrawerOpen] = useState(false);
+  const [auditResult, setAuditResult] = useState<any>(null);
+  const [auditDrawerOpen, setAuditDrawerOpen] = useState(false);
+  const [auditLoading, setAuditLoading] = useState(false);
+  const [databases, setDatabases] = useState<any[]>([]);
+  const [schemaNames, setSchemaNames] = useState<string[]>([]);
+  const [loadingSchemaNames, setLoadingSchemaNames] = useState(false);
+  const [schemaLoaded, setSchemaLoaded] = useState(false);
+  const [editorHeight, setEditorHeight] = useState(300);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const isDragging = useRef(false);
+  const editorRef = useRef<any>(null);
+  const monacoRef = useRef<any>(null);
+  const schemaRef = useRef<SchemaInfo[]>([]);
+  const completionDisposableRef = useRef<any>(null);
+
+  const [activeResultKey, setActiveResultKey] = useState<string>('my-sql');
+
+  // æ°æ®åæ´å·¥åå¿«éåå»?  const [ticketModalVisible, setTicketModalVisible] = useState(false);
+  const [ticketModalSql, setTicketModalSql] = useState('');
+  const [ticketModalChangeType, setTicketModalChangeType] = useState('DML');
+  const [savingTicket, setSavingTicket] = useState(false);
+  const [ticketForm] = Form.useForm();
+
+  // èªå¨éæ©ç¬¬ä¸ä¸ªå®ä¾åæ°æ®åº?  useEffect(() => {
+    instanceApi.list().then(res => {
+      const list = res.data.data || [];
+      setDatabases(list);
+      // å¦æå½åæ²¡æéæ©å®ä¾ï¼æå½åéæ©çå®ä¾ä¸å¨åè¡¨ä¸­ï¼èªå¨éç¬¬ä¸ä¸?      const currentDbExists = list.some((db: any) => db.id === activeTabData?.databaseId);
+      if (list.length > 0 && (!activeTabData?.databaseId || !currentDbExists)) {
+        const firstDb = list[0];
+        updateTab(activeTab, { databaseId: firstDb.id, databaseName: undefined });
+      }
+    });
+  }, []);
+
+  // Ctrl+Enter / F8 å¿«æ·é?  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); handleExecute(); }
+      if (e.key === 'F8') { e.preventDefault(); handleExecute(); }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [activeTab, activeTabData?.sql]);
+
+  // 自动选择第一个Schema
+  useEffect(() => {
+    if (activeTabData?.databaseId) {
+      setLoadingSchemaNames(true);
+      instanceApi.getSchemas(activeTabData.databaseId)
+        .then(res => {
+          const names = res.data.data || [];
+          setSchemaNames(names);
+          // 如果当前没有选择Schema，或当前Schemaä¸å¨åè¡¨ä¸­ï¼èªå¨éç¬¬ä¸ä¸?          const currentDbNameExists = names.includes(activeTabData?.databaseName);
+          if (names.length > 0 && (!activeTabData?.databaseName || !currentDbNameExists)) {
+            updateTab(activeTab, { databaseName: names[0] });
+          }
+        })
+        .catch(() => setSchemaNames([]))
+        .finally(() => setLoadingSchemaNames(false));
+    } else { setSchemaNames([]); }
+  }, [activeTabData?.databaseId]);
+
+  // Schema 加载用于补全
+  const loadSchema = useCallback(async (databaseId: string, databaseName?: string) => {
+    if (!databaseId) return;
+    try {
+      const res = await (databaseName
+        ? instanceApi.getSchema(databaseId, databaseName)
+        : instanceApi.getSchema(databaseId));
+      if (res.data?.data) { schemaRef.current = res.data.data; setSchemaLoaded(true); registerCompletionProvider(); }
+    } catch { console.warn('加载数据库Schema失败'); }
+  }, []);
+
+  const registerCompletionProvider = useCallback(() => {
+    const monaco = monacoRef.current;
+    if (!monaco) return;
+    if (completionDisposableRef.current) completionDisposableRef.current.dispose();
+    completionDisposableRef.current = monaco.languages.registerCompletionItemProvider(
+      'mysql', createSqlCompletionProvider(() => schemaRef.current)
+    );
+  }, []);
+
+  useEffect(() => {
+    if (activeTabData?.databaseId) { setSchemaLoaded(false); loadSchema(activeTabData.databaseId, activeTabData.databaseName); }
+    else { schemaRef.current = []; setSchemaLoaded(false); }
+  }, [activeTabData?.databaseId, activeTabData?.databaseName, loadSchema]);
+
+  const handleEditorMount: OnMount = (editor, monaco) => {
+    editorRef.current = editor; monacoRef.current = monaco; registerCompletionProvider();
+  };
+
+  // ææ½è°æ´ç¼è¾å¨é«åº?  const handleMouseDown = useCallback((e: React.MouseEvent) => {
+    e.preventDefault(); isDragging.current = true;
+    const startY = e.clientY; const startH = editorHeight;
+    const onMouseMove = (ev: MouseEvent) => {
+      if (!isDragging.current) return;
+      setEditorHeight(Math.max(MIN_EDITOR_HEIGHT, Math.min(600, startH + (ev.clientY - startY))));
+    };
+    const onMouseUp = () => {
+      isDragging.current = false;
+      document.removeEventListener('mousemove', onMouseMove); document.removeEventListener('mouseup', onMouseUp);
+    };
+    document.addEventListener('mousemove', onMouseMove); document.addEventListener('mouseup', onMouseUp);
+  }, [editorHeight]);
+
+  const getSqlToExecute = () => {
+    const editor = editorRef.current;
+    if (editor) { const s = editor.getSelection(); if (s && !s.isEmpty()) return editor.getModel().getValueInRange(s); }
+    return activeTabData?.sql || '';
+  };
+
+  const handleExecute = async () => {
+    if (!activeTabData?.databaseId) { message.warning('è¯·åéæ©æ°æ®åºå®ä¾?); return; }
+    const sqlToRun = getSqlToExecute();
+    if (!sqlToRun.trim()) { message.warning('SQL语句不能为空'); return; }
+
+    // 检测数据变更操作，拦截并提示走工单
+    if (isDataChangeSQL(sqlToRun)) {
+      const blockedResult: QueryResult = {
+        columns: [],
+        data: [],
+        success: true,
+        executionTime: 0,
+        executedSql: sqlToRun,
+        _dataChangeBlocked: true,
+      };
+      setResults(prev => ({ ...prev, [activeTab]: [...(prev[activeTab] || []), blockedResult] }));
+      const newIdx = (results[activeTab]?.length || 0);
+      setActiveResultIdx(newIdx);
+      setActiveResultKey(String(newIdx));
+      message.warning('æ°æ®åæ´æä½éè¦å¨å·¥åç³»ç»ä¸­æ§è¡ï¼è¯·ç³è¯·æ°æ®åæ?);
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const startTime = Date.now();
+      const res = await sqlApi.execute(activeTabData.databaseId, sqlToRun, activeTabData.databaseName, 0, 200);
+      const newResults: QueryResult[] = (res.data.data || []).map((r: any) => ({
+        ...r, executionTime: Date.now() - startTime,
+        executedSql: sqlToRun,
+      }));
+      const elapsed = Date.now() - startTime;
+      setResults(prev => ({ ...prev, [activeTab]: [...(prev[activeTab] || []), ...newResults] }));
+      const newIdx = (results[activeTab]?.length || 0) + newResults.length - 1;
+      setActiveResultIdx(newIdx);
+      setActiveResultKey(String(newIdx));
+      const totalRows = newResults.reduce((s, r) => s + (r.data?.length || 0), 0);
+      message.success(`æ§è¡å®æï¼?{elapsed}ms`);
+      const { addExecutionRecord } = useAppStore.getState();
+      addExecutionRecord({ sql: sqlToRun, databaseId: activeTabData.databaseId!, databaseName: activeTabData.databaseName, executionTime: elapsed, rowCount: totalRows, success: true });
+    } catch (err: any) {
+      message.error(err.response?.data?.message || '执行失败');
+      const { addExecutionRecord } = useAppStore.getState();
+      addExecutionRecord({ sql: getSqlToExecute(), databaseId: activeTabData.databaseId!, databaseName: activeTabData.databaseName, executionTime: 0, success: false });
+    } finally { setLoading(false); }
+  };
+
+  /** å¿«éåå»ºæ°æ®åæ´å·¥å?*/
+  const handleOpenTicketModal = (sql: string) => {
+    if (!activeTabData?.databaseId || !activeTabData?.databaseName) {
+      message.warning('请先在对象浏览器中选择实例和Schema');
+      return;
+    }
+    setTicketModalSql(sql);
+    setTicketModalChangeType(detectChangeType(sql));
+    ticketForm.resetFields();
+    ticketForm.setFieldsValue({
+      title: `数据变更 - ${new Date().toLocaleString('zh-CN')}`,
+      priority: 'normal',
+    });
+    setTicketModalVisible(true);
+  };
+
+  /** æäº¤å¿«éå·¥å?*/
+  const handleSubmitTicket = async () => {
+    try {
+      const values = await ticketForm.validateFields();
+      setSavingTicket(true);
+      await ticketApi.create({
+        title: values.title,
+        databaseId: activeTabData?.databaseId,
+        databaseName: activeTabData?.databaseName,
+        sqlContent: ticketModalSql,
+        changeType: ticketModalChangeType,
+        priority: values.priority || 'normal',
+        description: '',
+        approvalTimeoutHours: 0,
+      });
+      message.success('æ°æ®åæ´å·¥åå·²æäº¤ï¼å¯å¨å·¥ååè¡¨ä¸­æ¥çå®¡æ¹è¿åº?);
+      setTicketModalVisible(false);
+      navigate('/tickets');
+    } catch (err: any) {
+      if (err?.errorFields) return; // 表单校验失败
+      message.error(err.response?.data?.message || '创建工单失败');
+    } finally {
+      setSavingTicket(false);
+    }
+  };
+
+  const [activeResultIdx, setActiveResultIdx] = useState<number>(0);
+  const [resultViewMode, setResultViewMode] = useState<'grid' | 'text' | 'record'>('grid');
+  const [textViewRow, setTextViewRow] = useState(0);
+
+  // 表结构查看器
+  const [tableStructureVisible, setTableStructureVisible] = useState(false);
+  const [tableStructureInfo, setTableStructureInfo] = useState<{ tableName: string; columns: any[] } | null>(null);
+  const currentResults = results[activeTab] || [];
+  const currentResult = currentResults[activeResultIdx];
+
+  /** 导出辅助：生成文件并触发下载 */
+  const downloadFile = useCallback((content: string, filename: string, mimeType: string) => {
+    const bom = '\uFEFF';
+    const blob = new Blob([bom + content], { type: `${mimeType};charset=utf-8` });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = filename; document.body.appendChild(a);
+    a.click(); document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }, []);
+
+  /** 导出处理 */
+  const handleExport = useCallback((format: string) => {
+    const cols: string[] = currentResult?.columns || [];
+    const rows: any[] = currentResult?.data || [];
+    if (cols.length === 0 || (cols.length === 1 && cols[0] === 'result')) {
+      // 非数据结果集（如执行统计）也尝试导出
+      if (rows.length === 0) { message.warning('无数据可导出'); return; }
+    }
+    const dbName = activeTabData?.databaseName || 'export';
+    const ts = dayjs().format('YYYYMMDD_HHmmss');
+    const baseName = `${dbName}_${ts}`;
+
+    const escapeCSV = (v: any) => {
+      if (v === null || v === undefined) return '';
+      const s = String(v);
+      if (s.includes(',') || s.includes('"') || s.includes('\n')) {
+        return '"' + s.replace(/"/g, '""') + '"';
+      }
+      return s;
+    };
+
+    const escapeSQL = (v: any) => {
+      if (v === null || v === undefined) return 'NULL';
+      if (typeof v === 'number') return String(v);
+      return "'" + String(v).replace(/'/g, "''").replace(/\\/g, '\\\\') + "'";
+    };
+
+    switch (format) {
+      case 'csv': {
+        const header = cols.map(c => escapeCSV(c)).join(',');
+        const body = rows.map((row: any) => cols.map(c => escapeCSV(row[c])).join(',')).join('\n');
+        downloadFile(header + '\n' + body, `${baseName}.csv`, 'text/csv');
+        break;
+      }
+      case 'excel': {
+        const header = '<tr>' + cols.map(c => `<th>${c}</th>`).join('') + '</tr>';
+        const body = rows.map((row: any) =>
+          '<tr>' + cols.map(c => {
+            const v = row[c];
+            const d = v === null || v === undefined ? '' : String(v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+            return `<td>${d}</td>`;
+          }).join('') + '</tr>'
+        ).join('');
+        const html = `<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel"><head><meta charset="utf-8"><!--[if gte mso 9]><xml><x:ExcelWorkbook><x:ExcelWorksheets><x:ExcelWorksheet><x:Name>Sheet1</x:Name><x:WorksheetOptions><x:DisplayGridlines/></x:WorksheetOptions></x:ExcelWorksheet></x:ExcelWorksheets></x:ExcelWorkbook></xml><![endif]--></head><body><table border="1">${header}${body}</table></body></html>`;
+        downloadFile(html, `${baseName}.xls`, 'application/vnd.ms-excel');
+        break;
+      }
+      case 'json': {
+        const arr = rows.map((row: any) => { const o: any = {}; cols.forEach(c => { o[c] = row[c]; }); return o; });
+        downloadFile(JSON.stringify(arr, null, 2), `${baseName}.json`, 'application/json');
+        break;
+      }
+      case 'txt': {
+        const header = cols.join('\t');
+        const body = rows.map((row: any) => cols.map(c => {
+          const v = row[c]; return v === null || v === undefined ? '\\N' : String(v);
+        }).join('\t')).join('\n');
+        downloadFile(header + '\n' + body, `${baseName}.txt`, 'text/plain');
+        break;
+      }
+      case 'sql': {
+        const colList = '`' + cols.join('`, `') + '`';
+        const body = rows.map((row: any) =>
+          `INSERT INTO \`${dbName}\` (${colList}) VALUES (${cols.map(c => escapeSQL(row[c])).join(', ')});`
+        ).join('\n');
+        downloadFile(body, `${baseName}.sql`, 'text/plain');
+        break;
+      }
+    }
+    message.success(`å·²å¯¼å?${rows.length} è¡?â?${baseName}.${format}`);
+  }, [currentResult, activeTabData?.databaseName, downloadFile, message]);
+
+  /** å è½½æ´å¤è¡ï¼åé¡µæ»å¨ï¼?*/
+  const loadMoreRows = useCallback(async () => {
+    if (!activeTabData?.databaseId || !currentResult || paginationLoading) return;
+    if (!currentResult.hasMore) return;
+    const offset = (currentResult.data || []).length;
+    const sql = currentResult.executedSql || getSqlToExecute();
+    if (!sql?.trim()) return;
+    setPaginationLoading(true);
+    try {
+      const res = await sqlApi.execute(activeTabData.databaseId, sql, activeTabData.databaseName, offset, 200);
+      const newResults: QueryResult[] = (res.data.data || []).map((r: any) => ({ ...r }));
+      if (newResults[0]?.data?.length) {
+        setResults(prev => {
+          const tabResults = [...(prev[activeTab] || [])];
+          if (!tabResults[activeResultIdx]) return prev;
+          const merged = { ...tabResults[activeResultIdx] };
+          merged.data = [...(merged.data || []), ...newResults[0].data];
+          merged.hasMore = newResults[0].hasMore;
+          tabResults[activeResultIdx] = merged;
+          return { ...prev, [activeTab]: tabResults };
+        });
+      } else {
+        setResults(prev => {
+          const tabResults = [...(prev[activeTab] || [])];
+          if (tabResults[activeResultIdx]) {
+            tabResults[activeResultIdx] = { ...tabResults[activeResultIdx], hasMore: false };
+          }
+          return { ...prev, [activeTab]: tabResults };
+        });
+      }
+    } catch { message.warning('加载更多失败'); }
+    finally { setPaginationLoading(false); }
+  }, [activeTab, activeResultIdx, activeTabData, currentResult, paginationLoading, getSqlToExecute]);
+
+  /** ç»æå®¹å¨æ»å¨æ£æµââè§¦åºèªå¨å è½½æ´å¤?*/
+  const handleResultScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
+    const el = e.currentTarget;
+    if (el.scrollHeight - el.scrollTop - el.clientHeight < 40) {
+      loadMoreRows();
+    }
+  }, [loadMoreRows]);
+
+  useEffect(() => { if (activeResultIdx >= currentResults.length) setActiveResultIdx(0); }, [currentResults.length]);
+  // 切换结果集时重置文本视图行号
+  useEffect(() => { setTextViewRow(0); }, [activeResultIdx]);
+
+  const handleExplain = async () => {
+    if (!activeTabData?.databaseId) { message.warning('è¯·åéæ©æ°æ®åºå®ä¾?); return; }
+    const sqlToRun = getSqlToExecute();
+    if (!sqlToRun.trim()) { message.warning('SQL语句不能为空'); return; }
+    setExplainLoading(true);
+    try {
+      const res = await sqlApi.explain(activeTabData.databaseId, sqlToRun, activeTabData.databaseName);
+      const plan = res.data.data; plan.executionTime = Date.now();
+      setExplainResult(plan); setExplainDrawerOpen(true);
+    } catch (err: any) { message.error(err.response?.data?.message || '获取执行计划失败'); }
+    finally { setExplainLoading(false); }
+  };
+
+  const handleAudit = async () => {
+    const sqlToRun = getSqlToExecute();
+    if (!sqlToRun.trim()) { message.warning('SQL不能为空'); return; }
+    setAuditLoading(true);
+    try { const res = await sqlApi.audit(sqlToRun); setAuditResult(res.data.data); setAuditDrawerOpen(true); }
+    catch (err: any) { message.error('审核失败: ' + (err.response?.data?.message || err.message)); }
+    finally { setAuditLoading(false); }
+  };
+
+  const handleFormat = () => {
+    const sql = activeTabData?.sql || '';
+    const keywords = ['SELECT','FROM','WHERE','AND','OR','JOIN','LEFT JOIN','RIGHT JOIN','INNER JOIN','ON','ORDER BY','GROUP BY','HAVING','LIMIT','INSERT INTO','VALUES','UPDATE','SET','DELETE FROM','CREATE TABLE','ALTER TABLE','DROP TABLE'];
+    let formatted = sql.replace(/\s+/g,' ').trim();
+    keywords.forEach(kw => { formatted = formatted.replace(new RegExp(`\\b${kw}\\b`, 'gi'), `\n${kw.toUpperCase()}`); });
+    updateTab(activeTab, { sql: formatted.replace(/^\n/, '') }); message.info('SQL已格式化');
+  };
+
+  const handleCopySql = () => { const sql = activeTabData?.sql || ''; navigator.clipboard.writeText(sql).then(() => message.success('SQLå·²å¤å?)); };
+
+  const handleUseFromBottom = useCallback((sql: string) => { updateTab(activeTab, { sql }); message.info('SQLå·²å è½½å°ç¼è¾å?); }, [activeTab, updateTab]);
+  const handleNewTab = useCallback((databaseId: string, databaseName: string, tableName?: string) => {
+    const initSql = tableName ? `SELECT * FROM \`${tableName}\`\nLIMIT 200;` : '';
+    // æ£æ¥æ¯å¦å·²æåååºçæ¥è¯¢é¡µç­?    const existingTab = sqlTabs.find(t => t.databaseId === databaseId && t.databaseName === databaseName);
+    if (existingTab) {
+      // 已有同名页签：切换到它，追加 SQL å°æ«å°?      setActiveTab(existingTab.key);
+      if (tableName && initSql) {
+        const currentSql = existingTab.sql || '';
+        const separator = currentSql && !currentSql.endsWith('\n') ? '\n' : '';
+        updateTab(existingTab.key, { sql: currentSql + separator + initSql });
+      }
+    } else {
+      // åå»ºæ°é¡µç­¾ï¼æ é¢åªæ¾ç¤ºåºå?      const key = `tab-${Date.now()}`;
+      addTab({ key, title: databaseName, sql: initSql, databaseId, databaseName });
+    }
+  }, [sqlTabs, setActiveTab, addTab, updateTab]);
+
+  const handleViewTableStructure = useCallback(async (databaseId: string, databaseName: string, tableName: string) => {
+    try {
+      const res = await instanceApi.getBrowserSchema(databaseId, databaseName);
+      const schema = res.data?.data;
+      const tableInfo = (schema?.tables || []).find((t: any) => t.name === tableName)
+        || (schema?.views || []).find((t: any) => t.name === tableName);
+      if (tableInfo) {
+        setTableStructureInfo({ tableName, columns: tableInfo.columns || [] });
+        setTableStructureVisible(true);
+      } else {
+        message.warning('未找到表结构信息');
+      }
+    } catch { message.error('è·åè¡¨ç»æå¤±è´?); }
+  }, []);
+
+  const handleInstanceSelect = useCallback((instanceId: string) => {
+    updateTab(activeTab, { databaseId: instanceId, databaseName: undefined });
+  }, [activeTab, updateTab]);
+  const handleDatabaseSelect = useCallback((dbName: string) => {
+    updateTab(activeTab, { databaseName: dbName });
+  }, [activeTab, updateTab]);
+  const handleInsertToEditor = useCallback((text: string) => {
+    const editor = editorRef.current;
+    if (editor) {
+      const pos = editor.getPosition();
+      editor.executeEdits('', [{ range: { startLineNumber: pos.lineNumber, startColumn: pos.column, endLineNumber: pos.lineNumber, endColumn: pos.column }, text }]);
+      editor.focus();
+    } else { updateTab(activeTab, { sql: (activeTabData?.sql || '') + text }); }
+  }, [activeTab, updateTab, activeTabData?.sql]);
+
+  const currentDatabase = databases.find(d => d.id === activeTabData?.databaseId);
+
+  const tableColumns = useMemo(() => {
+    // 行号列（DBeaver é£æ ¼ï¼?    const cols: any[] = [{
+      title: '',
+      dataIndex: '_rowNum',
+      key: '_rowNum',
+      width: 48,
+      fixed: 'left' as const,
+      align: 'center' as const,
+      render: (_: any, __: any, idx: number) => (
+        <span style={{ color: '#8c8c8c', fontSize: 11 }}>{idx + 1}</span>
+      ),
+    }];
+    // æ°æ®å?    if (currentResult?.columns) {
+      currentResult.columns.forEach((col: string) => {
+        cols.push({
+          title: col,
+          dataIndex: col,
+          key: col,
+          ellipsis: true,
+          width: Math.max(100, col.length * 12 + 16),
+          render: (val: any) => (
+            <span style={{ fontSize: 12, fontFamily: 'Consolas, Monaco, monospace', whiteSpace: 'nowrap' }}>
+              {val !== null && val !== undefined ? String(val) : <span style={{ color: '#bbb' }}>NULL</span>}
+            </span>
+          ),
+        });
+      });
+    }
+    return cols;
+  }, [currentResult]);
+
+  // ===== 渲染 â?DBeaver 布局 =====
+  return (
+    <div ref={containerRef} className="dbeaver-workbench" style={{ height: '100%', display: 'flex', flexDirection: 'column', fontSize: 13 }}>
+
+
+      {/* âââââââ?ä¸»ä½ï¼å·¦æ ?+ 右编辑器+结果 âââââââ?*/}
+      <div style={{ flex: 1, display: 'flex', minWidth: 0, overflow: 'hidden' }}>
+        {/* ========== å·¦ä¾§å¯¹è±¡æµè§å?(独立滚动) ========== */}
+          <ObjectBrowser
+            databaseId={activeTabData?.databaseId}
+          databaseName={activeTabData?.databaseName}
+          onInstanceSelect={handleInstanceSelect}
+          onDatabaseSelect={handleDatabaseSelect}
+          onNewTab={handleNewTab}
+          onViewTableStructure={handleViewTableStructure}
+          onInsertToEditor={handleInsertToEditor}
+        />
+
+        {/* ========== 查询操作栏（执行/æ ¼å¼å?æ§è¡è®¡å/复制/审核/æ¨¡æ¿ï¼?========== */}
+        <div style={{
+          width: 38, display: 'flex', flexDirection: 'column', alignItems: 'center',
+          gap: 2, padding: '4px 2px', background: '#f7f8fa',
+          borderRight: '1px solid #d9d9d9', flexShrink: 0,
+        }}>
+          <Tooltip title="执行 SQL (Ctrl+Enter)" placement="right">
+            <Button type="text" size="small" icon={<PlayCircleOutlined style={{ color: '#52c41a', fontSize: 14 }} />}
+              onClick={handleExecute} loading={loading}
+              style={{ width: 30, height: 30, padding: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }} />
+          </Tooltip>
+          <Tooltip title="æ ¼å¼å?SQL" placement="right">
+            <Button type="text" size="small" icon={<FormatPainterOutlined style={{ fontSize: 12 }} />}
+              onClick={handleFormat}
+              style={{ width: 30, height: 30, padding: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }} />
+          </Tooltip>
+          <Tooltip title="执行计划 (EXPLAIN)" placement="right">
+            <Button type="text" size="small" icon={<ExperimentOutlined style={{ fontSize: 12 }} />}
+              onClick={handleExplain}
+              style={{ width: 30, height: 30, padding: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }} />
+          </Tooltip>
+
+          <div style={{ width: 28, height: 1, background: '#e8e8e8', margin: '4px 0' }} />
+
+          <Tooltip title="复制 SQL" placement="right">
+            <Button type="text" size="small" icon={<CopyOutlined style={{ fontSize: 12 }} />}
+              onClick={handleCopySql}
+              style={{ width: 30, height: 30, padding: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }} />
+          </Tooltip>
+          <div style={{ flex: 1 }} />
+
+          {schemaLoaded ? (
+            <Tooltip title={`å·²å è½?${schemaRef.current.length} 张表`} placement="right">
+              <span style={{ fontSize: 9, color: '#52c41a', writingMode: 'vertical-rl', padding: '4px 0' }}>
+                {schemaRef.current.length}T
+              </span>
+            </Tooltip>
+          ) : null}
+        </div>
+
+        {/* ========== 右侧主工作区 ========== */}
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, overflow: 'hidden' }}>
+          {sqlTabs.length === 0 ? (
+            <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#bbb', fontSize: 13 }}>
+              <div style={{ textAlign: 'center' }}>
+                <DatabaseOutlined style={{ fontSize: 40, marginBottom: 16, color: '#d9d9d9' }} />
+                <div>å³é®æ°æ®åº?è¡?â?æ°å»ºSQL查询</div>
+                <div style={{ fontSize: 11, marginTop: 4, color: '#ddd' }}>æç¹å»å·¦ä¾?+ å·åå»ºç©ºç½æ¥è¯?/div>
+              </div>
+            </div>
+          ) : (
+          <>
+          {/* 查询标签页栏 â?ç±?DBeaver 多Tab */}
+          <Tabs
+            type="editable-card" hideAdd activeKey={activeTab} onChange={setActiveTab}
+            onEdit={(targetKey) => removeTab(targetKey as string)}
+            items={sqlTabs.map(tab => ({
+              key: tab.key,
+              label: (
+                <Tooltip title={`${tab.databaseName || ''} · ${tab.sql?.slice(0, 60) || '(ç©?'}`}>
+                  <span style={{ fontSize: 12, maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', display: 'inline-block', verticalAlign: 'middle' }}>
+                    {tab.title}
+                  </span>
+                </Tooltip>
+              ),
+              closable: sqlTabs.length > 1,
+            }))}
+            size="small"
+            tabBarStyle={{ margin: 0, paddingLeft: 4, paddingRight: 4, background: '#fafafa', borderBottom: '1px solid #e8e8e8', minHeight: 32, flexShrink: 0 }}
+          />
+
+          {/* ========== SQL ç¼è¾å¨åºå?========== */}
+          <div style={{
+            height: editorHeight, minHeight: MIN_EDITOR_HEIGHT,
+            position: 'relative', background: '#fff', flexShrink: 0,
+          }}>
+            <Editor
+              height="100%" defaultLanguage="mysql" value={activeTabData?.sql || ''}
+              onChange={(value) => updateTab(activeTab, { sql: value || '' })}
+              theme="vs" onMount={handleEditorMount}
+              options={{
+                minimap: { enabled: false }, fontSize: 13, lineNumbers: 'on',
+                automaticLayout: true, tabSize: 2, wordWrap: 'on',
+                scrollBeyondLastLine: false, renderLineHighlight: 'line',
+                suggest: { showKeywords: true, showSnippets: true, showValues: true },
+                quickSuggestions: { other: true, comments: false, strings: false },
+                suggestOnTriggerCharacters: true, acceptSuggestionOnCommitCharacter: true,
+                folding: true, lineDecorationsWidth: 8,
+                scrollbar: { verticalScrollbarSize: 8, horizontalScrollbarSize: 8 },
+                padding: { top: 8 },
+              }}
+            />
+          </div>
+
+          {/* ========== ææ½åéæ?========== */}
+          <div onMouseDown={handleMouseDown} style={{
+            height: 5, cursor: 'row-resize', position: 'relative',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            userSelect: 'none', flexShrink: 0,
+          }}>
+            <div style={{ width: 48, height: 3, borderRadius: 1.5, background: '#c0c0c0', transition: 'background 0.15s' }}
+              onMouseEnter={e => (e.currentTarget.style.background = '#999')}
+              onMouseLeave={e => (e.currentTarget.style.background = '#c0c0c0')}
+            />
+          </div>
+
+          {/* ========== 结果面板（DBeaver 风格）：我的SQL + ç»æé?========== */}
+          <div style={{ flex: 1, minHeight: 120, display: 'flex', flexDirection: 'column', overflow: 'hidden', background: '#fff' }}>
+            {/* Tab 栏：我的SQL（固定第一页） + ç»æéé¡µç­?*/}
+            <div style={{
+              display: 'flex', alignItems: 'center',
+              borderBottom: '1px solid #e8e8e8',
+              background: '#fafafa', minHeight: 30, flexShrink: 0,
+            }}>
+              {/* åºå®ç?æçSQL"页签 */}
+              <div
+                onClick={() => { setActiveResultKey('my-sql'); }}
+                style={{
+                  padding: '4px 12px', fontSize: 12, cursor: 'pointer', fontWeight: 500,
+                  borderBottom: activeResultKey === 'my-sql' ? '2px solid #1677ff' : '2px solid transparent',
+                  color: activeResultKey === 'my-sql' ? '#1677ff' : '#595959',
+                  background: activeResultKey === 'my-sql' ? '#fff' : 'transparent',
+                  whiteSpace: 'nowrap', borderRight: '1px solid #e8e8e8',
+                  userSelect: 'none', lineHeight: '22px',
+                }}
+              >
+                我的SQL {savedQueries.length > 0 && <Tag color="blue" style={{ marginLeft: 4, fontSize: 10, lineHeight: '14px' }}>{savedQueries.length}</Tag>}
+              </div>
+              {/* 结果集可关闭页签 */}
+              {currentResults.length > 0 && (
+                <Tabs type="editable-card" hideAdd size="small"
+                  activeKey={activeResultKey === 'my-sql' ? undefined : activeResultKey}
+                  onChange={(key) => { setActiveResultKey(key); setActiveResultIdx(Number(key)); }}
+                  onEdit={(targetKey) => {
+                    const idx = Number(targetKey);
+                    const newResults = currentResults.filter((_, i) => i !== idx);
+                    setResults(prev => ({ ...prev, [activeTab]: newResults }));
+                    if (newResults.length === 0) { setActiveResultKey('my-sql'); setActiveResultIdx(0); }
+                    else if (activeResultIdx >= newResults.length) { const ni = Math.max(0, newResults.length - 1); setActiveResultIdx(ni); setActiveResultKey(String(ni)); }
+                    else if (activeResultIdx === idx) { const ni = Math.min(idx, newResults.length - 1); setActiveResultIdx(ni); setActiveResultKey(String(ni)); }
+                  }}
+                  items={currentResults.map((r, i) => ({
+                    key: String(i),
+                    label: <span style={{ fontSize: 11 }}>
+                      {r._dataChangeBlocked ? (
+                        <span>变更 #{i + 1} <Tag color="warning" style={{ fontSize: 9, lineHeight: '14px', padding: '0 3px', borderRadius: 3, marginLeft: 2 }}>需审批</Tag></span>
+                      ) : (
+                        `结果 #${i + 1}${r.data?.length ? (r.hasMore ? ` (${r.data.length}+è¡?` : ` (${r.data.length}è¡?`) : r.affectRows ? ` (${r.affectRows}è¡?` : ''}`
+                      )}
+                    </span>,
+                    closable: true,
+                  }))}
+                  tabBarStyle={{ margin: 0, minHeight: 28 }}
+                  style={{ flex: 1, overflow: 'hidden' }}
+                />
+              )}
+              {currentResults.length > 0 && (
+                <Button size="small" type="link" danger style={{ marginRight: 4, flexShrink: 0 }} onClick={() => {
+                  setResults(prev => ({ ...prev, [activeTab]: [] })); setActiveResultIdx(0); setActiveResultKey('my-sql');
+                }}>清除全部</Button>
+              )}
+            </div>
+
+            {/* 内容区：我的SQL 面板 æ?ç»ææ°æ® */}
+            {activeResultKey === 'my-sql' ? (
+              <BottomPanel visible={true} activeTabData={activeTabData} onUseQuery={handleUseFromBottom} />
+            ) : currentResult?._dataChangeBlocked ? (
+              /* ========== 数据变更拦截视图 ========== */
+              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'auto' }}>
+                <Alert
+                  type="warning"
+                  showIcon
+                  icon={<StopOutlined />}
+                  message={<span style={{ fontWeight: 600, fontSize: 14 }}>æ°æ®åæ´æä½è¢«æ¦æ?/span>}
+                  description={
+                    <div style={{ marginTop: 4 }}>
+                      <p style={{ marginBottom: 8 }}>查询编辑器不支持直接执行数据变更操作（INSERT / UPDATE / DELETE / ALTER / DROP / CREATE 等），请通过<strong>数据变更工单</strong>æµç¨æ§è¡ï¼ç¡®ä¿æ°æ®å®å¨ä¸åè§ã?/p>
+                    </div>
+                  }
+                  style={{ margin: '12px 12px 0', borderRadius: 6 }}
+                />
+                {/* SQL预览 */}
+                <div style={{ margin: '12px 12px 0' }}>
+                  <div style={{ fontSize: 12, color: '#888', marginBottom: 4 }}>拟执行的SQLè¯­å¥ï¼?/div>
+                  <pre style={{
+                    margin: 0, padding: '10px 12px', background: '#1e1e1e', color: '#d4d4d4',
+                    borderRadius: 6, fontSize: 12, fontFamily: 'Consolas, Monaco, monospace',
+                    maxHeight: 160, overflow: 'auto', lineHeight: 1.6,
+                    whiteSpace: 'pre-wrap', wordBreak: 'break-all',
+                  }}>
+                    {currentResult.executedSql}
+                  </pre>
+                </div>
+                {/* 操作按钮 */}
+                <div style={{ padding: '16px 12px', display: 'flex', gap: 8 }}>
+                  <Button
+                    type="primary"
+                    icon={<SendOutlined />}
+                    size="middle"
+                    onClick={() => handleOpenTicketModal(currentResult.executedSql || '')}
+                  >
+                    申请数据变更
+                  </Button>
+                  <Button
+                    icon={<CopyOutlined />}
+                    size="middle"
+                    onClick={() => { navigator.clipboard.writeText(currentResult.executedSql || ''); message.success('SQLå·²å¤å?); }}
+                  >
+                    复制SQL
+                  </Button>
+                </div>
+                {/* 变更类型提示 */}
+                <div style={{ padding: '0 12px 12px', fontSize: 11, color: '#aaa' }}>
+                  系统已自动检测SQLç±»åä¸?<Tag color="orange" style={{ fontSize: 10 }}>{detectChangeType(currentResult.executedSql || '')}</Tag>ï¼æäº¤å·¥ååå°èªå¨å¹éåæ´ç±»å?                </div>
+              </div>
+            ) : currentResult ? (
+              <>
+                {/* 顶部工具栏：视图切换 + 导出 */}
+                <div style={{
+                  display: 'flex', alignItems: 'center', gap: 2,
+                  padding: '2px 8px', background: '#fafafa',
+                  borderBottom: '1px solid #e8e8e8', flexShrink: 0, minHeight: 30,
+                }}>
+                  <Button size="small" type={resultViewMode === 'grid' ? 'primary' : 'text'}
+                    icon={<TableOutlined />} onClick={() => setResultViewMode('grid')}>表格</Button>
+                  <Button size="small" type={resultViewMode === 'text' ? 'primary' : 'text'}
+                    icon={<FileTextOutlined />} onClick={() => setResultViewMode('text')}>文本</Button>
+                  <Button size="small" type={resultViewMode === 'record' ? 'primary' : 'text'}
+                    icon={<ProfileOutlined />} onClick={() => setResultViewMode('record')}>记录</Button>
+
+                  <div style={{ flex: 1 }} />
+
+                  <Dropdown menu={{
+                    items: [
+                      { key: 'csv', label: 'CSV (.csv)', icon: <TableOutlined /> },
+                      { key: 'excel', label: 'Excel (.xls)', icon: <FileTextOutlined /> },
+                      { key: 'json', label: 'JSON (.json)', icon: <FileTextOutlined /> },
+                      { key: 'txt', label: '文本 (.txt)', icon: <FileTextOutlined /> },
+                      { key: 'sql', label: 'INSERT SQL (.sql)', icon: <FileTextOutlined /> },
+                    ],
+                    onClick: ({ key }) => handleExport(key),
+                  }}>
+                    <Button size="small" icon={<DownloadOutlined />}>导出</Button>
+                  </Dropdown>
+                </div>
+
+                {/* æ°æ®å±ç¤ºå?*/}
+                <div ref={resultContainerRef} onScroll={handleResultScroll} style={{ flex: 1, overflow: 'auto', minWidth: 0 }}>
+                  {currentResult && currentResult?.columns?.length > 0 && !(currentResult.columns.length === 1 && currentResult.columns[0] === 'result') ? (
+                    // 数据结果集：根据视图模式渲染
+                    (() => {
+                      const cols = currentResult!.columns!;
+                      const rows = currentResult!.data || [];
+                      const rowCount = rows.length;
+
+                        if (resultViewMode === 'grid') {
+                          // ç½æ ¼æ¨¡å¼ï¼è¡¨æ ?                          return (
+                            <Table
+                              columns={tableColumns}
+                              dataSource={rows.map((row: any, idx: number) => ({ ...row, _key: idx, _rowNum: idx + 1 }))}
+                              rowKey="_key" size="small" bordered
+                              scroll={{ x: 'max-content' }}
+                              pagination={false}
+                              style={{ fontSize: 12 }}
+                              rootClassName="dbeaver-result-grid"
+                              locale={{ emptyText: <span style={{ color: '#bbb', padding: 20 }}>暂无数据</span> }}
+                            />
+                          );
+                        }
+
+                        if (resultViewMode === 'text') {
+                          // 文本模式：DBeaver é£æ ¼ç®¡éç¬¦åéææ¬ï¼æå¨å¯¹é½åå®½ï¼?                          if (rowCount === 0) return <div style={{ padding: 16, color: '#999' }}>暂无数据</div>;
+                          const maxColWidth = 60;
+                          const displayRows = rows.slice(0, 500);
+                          // è®¡ç®æ¯åæå¤§å®½åº?                          const colWidths = cols.map((c: string, ci: number) => {
+                            const headerLen = c.length;
+                            let maxDataLen = 0;
+                            displayRows.forEach((row: any) => {
+                              const v = row[c];
+                              const s = v === null || v === undefined ? '\\N' : String(v);
+                              maxDataLen = Math.max(maxDataLen, Math.min(s.length, maxColWidth));
+                            });
+                            return Math.max(headerLen, maxDataLen);
+                          });
+                          // æå»ºå¯¹é½è¡?                          const headerLine = cols.map((c: string, ci: number) => c.padEnd(colWidths[ci])).join(' | ');
+                          const bodyLines = displayRows.map((row: any) =>
+                            cols.map((c: string, ci: number) => {
+                              const v = row[c];
+                              if (v === null || v === undefined) return '\\N'.padEnd(colWidths[ci]);
+                              const s = String(v);
+                              const display = s.length > maxColWidth ? s.slice(0, maxColWidth - 3) + '...' : s;
+                              return display.padEnd(colWidths[ci]);
+                            }).join(' | ')
+                          );
+                          const textContent = [headerLine, ...bodyLines].join('\n');
+                          return (
+                            <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
+                              <div style={{ color: '#999', padding: '3px 8px', fontSize: 11, borderBottom: '1px solid #eee', background: '#fafafa' }}>
+                                {rowCount}{currentResult?.hasMore ? '+' : ''} è¡?{cols.length} å?                              </div>
+                              <pre style={{
+                                margin: 0, flex: 1, overflow: 'auto',
+                                padding: '6px 10px', whiteSpace: 'pre', fontFamily: 'Consolas, Monaco, "Courier New", monospace',
+                                fontSize: 12, lineHeight: 1.5, color: '#333', background: '#fff',
+                              }}>
+                                {textContent}
+                              </pre>
+                            </div>
+                          );
+                        }
+
+                        // è®°å½æ¨¡å¼ï¼éå­æ®?key-value 展示
+                        {
+                          const currentRowData = rows[textViewRow];
+                          if (!currentRowData) return <div style={{ padding: 16, color: '#999' }}>暂无数据</div>;
+                          return (
+                            <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
+                              {/* 行导航标题栏 */}
+                              <div className="dbeaver-record-header">
+                                <div className="dbeaver-record-nav-btns">
+                                  <Button size="small" type="text" icon={<UpOutlined />}
+                                    onClick={() => setTextViewRow(r => Math.max(0, r - 1))}
+                                    disabled={textViewRow <= 0}
+                                    style={{ width: 22, height: 20, padding: 0, fontSize: 10 }}
+                                  />
+                                  <Button size="small" type="text" icon={<DownOutlined />}
+                                    onClick={() => setTextViewRow(r => Math.min(rowCount - 1, r + 1))}
+                                    disabled={textViewRow >= rowCount - 1}
+                                    style={{ width: 22, height: 20, padding: 0, fontSize: 10 }}
+                                  />
+                                </div>
+                                <span className="dbeaver-record-header-title">è¡?#{textViewRow + 1}</span>
+                                <span style={{ marginLeft: 'auto', fontSize: 10, color: '#bbb' }}>{rowCount} è¡?/span>
+                              </div>
+                              {/* 字段列表 */}
+                              <div style={{ flex: 1, overflow: 'auto' }}>
+                                {cols.map((col: string, ci: number) => {
+                                  const val = currentRowData[col];
+                                  const isNull = val === null || val === undefined;
+                                  let typeTag = '';
+                                  let tagColor = '#999';
+                                  let tagBg = '#f0f0f0';
+                                  if (isNull) { typeTag = ''; tagColor = '#999'; tagBg = '#fafafa'; }
+                                  else if (typeof val === 'number') { typeTag = '123'; tagColor = '#1890ff'; tagBg = '#e6f4ff'; }
+                                  else if (typeof val === 'string') { typeTag = 'AZ'; tagColor = '#d48806'; tagBg = '#fff7e6'; }
+                                  else if (val instanceof Date || (typeof val === 'string' && /^\d{4}-\d{2}/.test(val))) { typeTag = 'DT'; tagColor = '#722ed1'; tagBg = '#f9f0ff'; }
+                                  else if (typeof val === 'boolean') { typeTag = 'BOL'; tagColor = '#cf1322'; tagBg = '#fff1f0'; }
+                                  return (
+                                    <div key={ci} className={`dbeaver-record-row ${ci % 2 === 0 ? '' : 'odd'}`}>
+                                      <span className="dbeaver-type-tag" style={{ color: tagColor, background: tagBg }}>{typeTag}</span>
+                                      <span className="dbeaver-field-name" title={col}>{col}</span>
+                                      <span className={`dbeaver-field-value ${isNull ? 'null-value' : ''}`}>
+                                        {isNull ? '\\N' : String(val)}
+                                      </span>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          );
+                        }
+                      })()
+                    ) : currentResult ? (
+                      <ExecutionStats result={currentResult} />
+                    ) : (
+                      <div style={{ textAlign: 'center', paddingTop: 40, color: '#999', fontSize: 13 }}>æ ç»ææ°æ?/div>
+                    )}
+                    {/* åé¡µå è½½æç¤ºå?*/}
+                    {currentResult?.hasMore && (
+                      <div
+                        onClick={!paginationLoading ? loadMoreRows : undefined}
+                        style={{
+                          textAlign: 'center', padding: '8px 0',
+                          cursor: paginationLoading ? 'wait' : 'pointer',
+                          color: paginationLoading ? '#999' : '#1677ff',
+                          fontSize: 12, borderTop: '1px solid #f0f0f0', userSelect: 'none',
+                        }}
+                      >
+                        {paginationLoading ? 'å è½½ä¸?..' : `å·²å è½?${(currentResult.data || []).length} 行，点击或滚动加载更多`}
+                      </div>
+                    )}
+                  </div>
+              </>
+            ) : currentResults.length > 0 ? (
+              <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#999', fontSize: 13 }}>请选择一个结果集</div>
+            ) : (
+              <div style={{
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                height: '100%', color: '#bbb', fontSize: 13, flexDirection: 'column', gap: 6,
+                background: '#fafafa',
+              }}>
+                <PlayCircleOutlined style={{ fontSize: 40, opacity: 0.25 }} />
+                <span>输入 SQL 并按 Ctrl+Enter æ?F8 执行</span>
+                <span style={{ fontSize: 11, color: '#ddd' }}>å³é®è¡?åºå¯æ°å»ºSQL查询 | 右键表可查看结构</span>
+              </div>
+            )}
+          </div>
+          </>
+          )}
+        </div>
+      </div>
+
+      {/* ========== 执行计划 Drawer ========== */}
+      <Drawer
+        title={<span><ExperimentOutlined /> 执行计划 (EXPLAIN)</span>}
+        placement="right" width={700} open={explainDrawerOpen}
+        onClose={() => setExplainDrawerOpen(false)}
+        extra={<Button size="small" onClick={() => { setExplainResult(null); setExplainDrawerOpen(false); }}>关闭</Button>}
+      >
+        {explainResult ? (<>
+          <div style={{ marginBottom: 8, fontSize: 12, color: '#999' }}>
+            耗时: {explainResult.executionTime}ms | 返回: {explainResult.data?.length || 0} è¡?          </div>
+          {explainResult.data?.map((row: any, idx: number) => {
+            const type = row.type || ''; const isFullScan = type === 'ALL';
+            return (
+              <div key={idx} style={{ marginBottom: 6, padding: 8, borderLeft: `3px solid ${isFullScan ? '#cf1322' : '#52c41a'}`, background: isFullScan ? '#fff2f0' : '#f6ffed', borderRadius: '0 4px 4px 0' }}>
+                <Space wrap>
+                  <Tag color={isFullScan ? 'red' : 'green'}>type: {type || 'N/A'}</Tag>
+                  {row.possible_keys && <Tag color="blue">索引: {row.possible_keys}</Tag>}
+                  {row.key && <Tag color="cyan">使用: {row.key}</Tag>}
+                  <Tag>æ«æè¡? {row.rows || 0}</Tag>
+                  {row.Extra && <Tag color={row.Extra.includes('filesort') ? 'orange' : row.Extra.includes('temporary') ? 'red' : 'default'}>Extra: {row.Extra}</Tag>}
+                </Space>
+                {isFullScan && <Alert message="å¨è¡¨æ«æï¼å»ºè®®æ·»å ç´¢å¼? type="warning" showIcon style={{ marginTop: 4 }} />}
+              </div>
+            );
+          })}
+          <Table columns={explainResult.columns?.map((col: string) => ({ title: col, dataIndex: col, key: col, ellipsis: true, width: 120 })) || []}
+            dataSource={explainResult.data?.map((row: any, idx: number) => ({ ...row, _key: idx }))} rowKey="_key" scroll={{ x: 600 }} size="small" pagination={false}
+          />
+        </>) : <div style={{ textAlign: 'center', padding: 40, color: '#bbb' }}>暂无执行计划数据</div>}
+      </Drawer>
+
+      {/* ========== SQL 审核 Drawer ========== */}
+      <Drawer
+        title={<span><SafetyOutlined /> SQLå®¡æ ¸ä¸ä¼åå»ºè®?/span>}
+        placement="right" width={600} open={auditDrawerOpen} onClose={() => setAuditDrawerOpen(false)}
+      >
+        {auditResult ? (<>
+          <div style={{ textAlign: 'center', padding: '16px 0', marginBottom: 16, background: '#fafafa', borderRadius: 8 }}>
+            <div style={{ fontSize: 42, fontWeight: 'bold', color: auditResult.optimizationScore >= 80 ? '#52c41a' : auditResult.optimizationScore >= 60 ? '#faad14' : '#cf1322' }}>
+              {auditResult.optimizationScore}
+            </div>
+            <div style={{ color: '#999', marginTop: 4 }}>优化评分</div>
+            <Tag color={
+              auditResult.optimizationLevel === 'excellent' ? 'green' : auditResult.optimizationLevel === 'good' ? 'blue' :
+              auditResult.optimizationLevel === 'fair' ? 'orange' : 'red'
+            } style={{ marginTop: 8 }}>
+              {auditResult.optimizationLevel === 'excellent' ? '优秀' : auditResult.optimizationLevel === 'good' ? '良好' :
+               auditResult.optimizationLevel === 'fair' ? 'ä¸è? : auditResult.optimizationLevel === 'poor' ? '较差' : '严重'}
+            </Tag>
+          </div>
+          <Alert message={`风险等级: ${auditResult.riskLevel === 'high' ? 'é«? : auditResult.riskLevel === 'medium' ? 'ä¸? : auditResult.riskLevel === 'low' ? 'ä½? : 'æ?}`}
+            type={auditResult.riskLevel === 'high' ? 'error' : auditResult.riskLevel === 'medium' ? 'warning' : 'success'}
+            showIcon style={{ marginBottom: 16 }}
+          />
+          {auditResult.issues?.map((issue: any, idx: number) => (
+            <div key={idx} style={{ marginBottom: 8, padding: '8px 12px', borderLeft: `3px solid ${issue.level === 'error' ? '#cf1322' : issue.level === 'warning' ? '#faad14' : '#1677ff'}`, borderRadius: '0 4px 4px 0', background: '#fff' }}>
+              <Space>
+                {issue.level === 'error' ? <WarningOutlined style={{ color: '#cf1322' }} /> :
+                 issue.level === 'warning' ? <WarningOutlined style={{ color: '#faad14' }} /> : <CheckCircleOutlined style={{ color: '#1677ff' }} />}
+                <Tag color={issue.level === 'error' ? 'red' : issue.level === 'warning' ? 'orange' : 'blue'}>{issue.code}</Tag>
+              </Space>
+              <div style={{ marginTop: 6, fontSize: 12 }}>{issue.message}</div>
+              {issue.suggestion && (
+                <div style={{ marginTop: 4, color: '#666', fontSize: 11, background: '#f5f5f5', padding: '4px 8px', borderRadius: 4 }}>
+                  建议: {issue.suggestion}
+                </div>
+              )}
+            </div>
+          ))}
+          {(!auditResult.issues || auditResult.issues.length === 0) && <Alert type="success" message="SQL审核通过，未发现问题" showIcon />}
+        </>) : <div style={{ textAlign: 'center', padding: 40, color: '#bbb' }}>暂无审核结果</div>}
+      </Drawer>
+
+      {/* ========== è¡¨ç»ææ¥ç?Drawer ========== */}
+      <Drawer
+        title={<span><ProfileOutlined /> è¡¨ç»æ?- {tableStructureInfo?.tableName}</span>}
+        placement="right" width={720} open={tableStructureVisible}
+        onClose={() => { setTableStructureVisible(false); setTableStructureInfo(null); }}
+      >
+        {tableStructureInfo ? (
+          <>
+            <div style={{ marginBottom: 8, fontSize: 12, color: '#999' }}>
+              å?{tableStructureInfo.columns.length} ä¸ªå­æ®?            </div>
+            <Table
+              dataSource={tableStructureInfo.columns.map((col, idx) => ({ ...col, _key: idx }))}
+              rowKey="_key" size="small" bordered
+              pagination={false}
+              scroll={{ x: 'max-content' }}
+              columns={[
+                { title: '#', dataIndex: '_key', key: '_key', width: 40, render: (_: any, __: any, idx: number) => idx + 1 },
+                {
+                  title: '列名', dataIndex: 'name', key: 'name', width: 140,
+                  render: (v: string) => (
+                    <Space size={4}>
+                      <DatabaseOutlined style={{ color: '#1677ff', fontSize: 10 }} />
+                      <span style={{ fontFamily: 'monospace', fontWeight: v.includes('id') || v === v.toUpperCase() ? 600 : 400 }}>{v}</span>
+                    </Space>
+                  ),
+                },
+                {
+                  title: '数据类型', dataIndex: 'type', key: 'type', width: 120,
+                  render: (v: string) => <Tag style={{ fontFamily: 'monospace', fontSize: 11 }}>{v}</Tag>,
+                },
+                { title: '非空', key: 'notNull', width: 55,
+                  render: (_: any, rec: any) => rec.key === 'PRI' ? <Tag color="red" style={{ fontSize: 10 }}>PK</Tag> : null,
+                },
+                { title: 'é?, dataIndex: 'key', key: 'key', width: 50,
+                  render: (v: string) => v && <span style={{ color: '#722ed1', fontSize: 11 }}>{v}</span>,
+                },
+                { title: 'é»è®¤å?, dataIndex: 'default', key: 'default', width: 80, ellipsis: true },
+                { title: '注释', dataIndex: 'comment', key: 'comment',
+                  ellipsis: true,
+                  render: (v: string) => <span style={{ color: '#999', fontSize: 11 }}>{v}</span>,
+                },
+              ]}
+              rowClassName={(_, idx) => idx % 2 === 0 ? undefined : 'dbeaver-row-alt'}
+            />
+          </>
+        ) : null}
+      </Drawer>
+
+      {/* ========== å¿«éåå»ºæ°æ®åæ´å·¥å?Modal ========== */}
+      <Modal
+        title={<span><SendOutlined style={{ marginRight: 8 }} />申请数据变更</span>}
+        open={ticketModalVisible}
+        onCancel={() => setTicketModalVisible(false)}
+        onOk={handleSubmitTicket}
+        okText="提交工单"
+        cancelText="取消"
+        confirmLoading={savingTicket}
+        width={700}
+        destroyOnClose
+      >
+        <Form form={ticketForm} layout="vertical" style={{ marginTop: 8 }}>
+          <Form.Item
+            name="title"
+            label="工单标题"
+            rules={[{ required: true, message: 'è¯·è¾å¥å·¥åæ é¢? }]}
+          >
+            <Input placeholder="ä¾å¦ï¼æ¹éæ´æ°ç¨æ·ç¶æ? />
+          </Form.Item>
+
+          {/* 展示预填信息 */}
+          <Row gutter={16}>
+            <Col span={8}>
+              <div style={{ marginBottom: 16 }}>
+                <div style={{ fontSize: 12, color: '#888', marginBottom: 4 }}>实例</div>
+                <Input value={currentDatabase?.name || activeTabData?.databaseId || 'â?} disabled style={{ fontSize: 12 }} />
+              </div>
+            </Col>
+            <Col span={8}>
+              <div style={{ marginBottom: 16 }}>
+                <div style={{ fontSize: 12, color: '#888', marginBottom: 4 }}>Schema</div>
+                <Input value={activeTabData?.databaseName || 'â?} disabled style={{ fontSize: 12 }} />
+              </div>
+            </Col>
+            <Col span={8}>
+              <div style={{ marginBottom: 16 }}>
+                <div style={{ fontSize: 12, color: '#888', marginBottom: 4 }}>变更类型</div>
+                <Tag color="orange" style={{ fontSize: 13, padding: '2px 12px', lineHeight: '22px' }}>{ticketModalChangeType}</Tag>
+              </div>
+            </Col>
+          </Row>
+
+          <Form.Item name="priority" label="ä¼åçº? initialValue="normal">
+            <Radio.Group>
+              <Radio.Button value="low">ä½?/Radio.Button>
+              <Radio.Button value="normal">æ®é?/Radio.Button>
+              <Radio.Button value="high">é«?/Radio.Button>
+              <Radio.Button value="urgent">ç´§æ?/Radio.Button>
+            </Radio.Group>
+          </Form.Item>
+
+          <div style={{ marginBottom: 4 }}>
+            <div style={{ fontSize: 12, color: '#888', marginBottom: 4 }}>SQL语句</div>
+            <pre style={{
+              margin: 0, padding: '10px 12px', background: '#1e1e1e', color: '#d4d4d4',
+              borderRadius: 6, fontSize: 12, fontFamily: 'Consolas, Monaco, monospace',
+              maxHeight: 180, overflow: 'auto', lineHeight: 1.6,
+              whiteSpace: 'pre-wrap', wordBreak: 'break-all',
+              border: '1px solid #333',
+            }}>
+              {ticketModalSql}
+            </pre>
+          </div>
+        </Form>
+      </Modal>
+    </div>
+  );
+};
+
+export default SqlEditor;

@@ -1,0 +1,81 @@
+spring:
+  application:
+    name: dataops-dms
+
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: jdbc:mysql://192.168.16.163:3325/dataops_dms?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true&nullCatalogMeansCurrent=true
+    username: devuser
+    password: Dev#2026$
+    type: com.alibaba.druid.pool.DruidDataSource
+    druid:
+      initial-size: 5
+      min-idle: 5
+      max-active: 20
+      max-wait: 60000
+      time-between-eviction-runs-millis: 60000
+      min-evictable-idle-time-millis: 300000
+      validation-query: SELECT 1
+      test-while-idle: true
+      test-on-borrow: false
+      test-on-return: false
+
+  # Jackson配置
+  jackson:
+    date-format: yyyy-MM-dd HH:mm:ss
+    time-zone: Asia/Shanghai
+    serialization:
+      write-dates-as-timestamps: false
+
+  # 文件上传配置
+  servlet:
+    multipart:
+      max-file-size: 100MB
+      max-request-size: 100MB
+
+server:
+  port: 8080
+  servlet:
+    context-path: /
+
+# MyBatis-Plus配置
+mybatis-plus:
+  mapper-locations: classpath:mapper/**/*.xml
+  type-aliases-package: com.dataops.dms.entity
+  configuration:
+    map-underscore-to-camel-case: true
+    cache-enabled: false
+    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+  global-config:
+    db-config:
+      id-type: assign_uuid
+      logic-delete-field: deleted
+      logic-delete-value: 1
+      logic-not-delete-value: 0
+
+# JWT配置
+jwt:
+  secret: dataops-dms-secret-key-2024-please-change-in-production
+  expiration: 86400000  # 24小时
+  header: Authorization
+
+# 日志配置
+logging:
+  level:
+    com.dataops.dms: debug
+    org.springframework.security: info
+    org.flowable: info
+
+# Flowable工作流配置
+flowable:
+  # 首次启动使用 true 自动建表，建表成功后建议改为 false
+  database-schema-update: true
+  async-executor-activate: false
+  history-level: full
+  # 指定数据库类型为mysql，避免自动检测失败
+  database-type: mysql
+
+# 权限申请配置
+permission:
+  request:
+    require-dba-approval: false  # 是否需要DBA审批（默认关闭）
