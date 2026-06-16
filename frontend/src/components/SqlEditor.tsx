@@ -99,228 +99,173 @@ interface BottomPanelProps {
   activeTabData: any;
 
   onUseQuery: (sql: string) => void;
-
+  editorRef: React.MutableRefObject<any>;
 }
 
 
 
-const BottomPanel: React.FC<BottomPanelProps> = ({ visible, activeTabData, onUseQuery }) => {
-
+const BottomPanel: React.FC<BottomPanelProps> = ({ visible, activeTabData, onUseQuery, editorRef }) => {
   const [panelTab, setPanelTab] = useState<string>('favorites');
-
   const [searchText, setSearchText] = useState('');
-
   const [editModalOpen, setEditModalOpen] = useState(false);
-
   const [editingQuery, setEditingQuery] = useState<any>(null);
-
   const [editForm, setEditForm] = useState({ name: '', sql: '' });
 
-
-
-  const {
-
-    savedQueries, addSavedQuery, updateSavedQuery, deleteSavedQuery,
-
-    toggleFavorite, executionHistory, clearExecutionHistory,
-
-  } = useAppStore();
-
-
+  const { savedQueries, addSavedQuery, updateSavedQuery, deleteSavedQuery, toggleFavorite, executionHistory, clearExecutionHistory } = useAppStore();
 
   const dbFilteredQueries = useMemo(() => {
-
-    if (!activeTabData?.databaseId) return savedQueries;
-
-    return savedQueries.filter(q =>
-
-      (!q.databaseId || q.databaseId === activeTabData.databaseId) &&
-
-      (!q.databaseName || q.databaseName === activeTabData.databaseName)
-
-    );
-
+    const dbId = activeTabData?.databaseId;
+    const dbName = activeTabData?.databaseName;
+    if (!dbId) return savedQueries.filter(q => !q.databaseId);
+    return savedQueries.filter(q => q.databaseId === dbId && q.databaseName === dbName);
   }, [savedQueries, activeTabData?.databaseId, activeTabData?.databaseName]);
 
-
-
   const dbFilteredHistory = useMemo(() => {
-
-    if (!activeTabData?.databaseId) return executionHistory;
-
-    return executionHistory.filter(h =>
-
-      h.databaseId === activeTabData.databaseId &&
-
-      h.databaseName === activeTabData.databaseName
-
-    );
-
+    const dbId = activeTabData?.databaseId;
+    const dbName = activeTabData?.databaseName;
+    if (!dbId) return executionHistory.filter(h => !h.databaseId);
+    return executionHistory.filter(h => h.databaseId === dbId && h.databaseName === dbName);
   }, [executionHistory, activeTabData?.databaseId, activeTabData?.databaseName]);
 
-
-
   const filteredSavedQueries = useMemo(() => {
-
     if (!searchText.trim()) return dbFilteredQueries;
-
     const kw = searchText.toLowerCase();
-
-    return dbFilteredQueries.filter(q =>
-
-      q.name.toLowerCase().includes(kw) || q.sql.toLowerCase().includes(kw)
-
-    );
-
+    return dbFilteredQueries.filter(q => q.name.toLowerCase().includes(kw) || q.sql.toLowerCase().includes(kw));
   }, [dbFilteredQueries, searchText]);
 
-
-
   const filteredHistory = useMemo(() => {
-
     if (!searchText.trim()) return dbFilteredHistory;
-
     const kw = searchText.toLowerCase();
-
     return dbFilteredHistory.filter(h => h.sql.toLowerCase().includes(kw));
-
   }, [dbFilteredHistory, searchText]);
 
-
-
   const getPopularityRate = (count: number): number => {
-
     if (count >= 20) return 5; if (count >= 10) return 4;
-
     if (count >= 5) return 3; if (count >= 2) return 2;
-
     return count >= 1 ? 1 : 0;
-
   };
-
-
-
-  const getAvgDuration = (totalDuration: number, count: number): number =>
-
-    count > 0 ? Math.round(totalDuration / count) : 0;
-
-
 
   const handleAddFavorite = () => {
-    if (!activeTabData?.sql?.trim()) { message.warning('请先输入SQL'); return; }
-    const existing = savedQueries.find(q => q.sql.trim() === activeTabData.sql.trim());
-    if (existing) {
-      if (!existing.isFavorite) {
-        toggleFavorite(existing.id);
-        message.success('已添加到收藏');
-      } else {
-        toggleFavorite(existing.id);
-        message.success('已取消收藏');
-      }
-      return;
+    const editor = editorRef.current;
+    let sql = activeTabData?.sql || '';
+    // 优先取编辑器选中文本
+    if (editor) {
+      const selection = editor.getModel()?.getValueInRange(editor.getSelection() || editor.getModel()!.getFullModelRange());
+      if (selection?.trim()) sql = selection;
     }
-    const newQuery = {
-      id: Date.now().toString(),
-      name: `SQL ${savedQueries.length + 1}`,
-      sql: activeTabData.sql,
-      databaseId: activeTabData.databaseId,
-      databaseName: activeTabData.databaseName,
-      isFavorite: true,
-      createdAt: Date.now(),
-      executionCount: 0,
-      totalDuration: 0,
-    };
-    addSavedQuery(newQuery);
-    message.success('已保存并添加到收藏');
-  };
-
-  const handleEdit = (q: any) => {
-    setEditingQuery(q);
-    setEditForm({ name: q.name, sql: q.sql });
+    if (!sql.trim()) { message.warning('请先输入SQL或选中SQL'); return; }
+    setEditingQuery(null);
+    setEditForm({ name: `Query ${savedQueries.length + 1}`, sql });
     setEditModalOpen(true);
   };
 
-  const handleDelete = (id: string) => {
-    deleteSavedQuery(id);
-    message.success('已删除');
-  };
-
+  const handleEdit = (q: any) => { setEditingQuery(q); setEditForm({ name: q.name, sql: q.sql }); setEditModalOpen(true); };
+  const handleDelete = (id: string) => { deleteSavedQuery(id); };
   const handleSaveEdit = () => {
     if (editingQuery) {
       updateSavedQuery(editingQuery.id, { ...editingQuery, ...editForm });
-      message.success('保存成功');
-      setEditModalOpen(false);
+    } else {
+      addSavedQuery({
+        id: Date.now().toString(), name: editForm.name || `Query ${savedQueries.length + 1}`,
+        sql: editForm.sql, databaseId: activeTabData?.databaseId, databaseName: activeTabData?.databaseName,
+        isFavorite: true, createdAt: Date.now(), executionCount: 1, totalDuration: 0,
+      });
     }
+    setEditModalOpen(false);
   };
-
-  const handleClearHistory = () => {
-    clearExecutionHistory();
-    message.success('已清空执行历史');
-  };
+  const handleClearHistory = () => { clearExecutionHistory(); };
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
-      <Tabs activeKey={panelTab} onChange={setPanelTab} size="small" tabBarStyle={{ margin: 0 }}>
-        <Tabs.TabPane tab={
-          <span><StarFilled style={{ color: '#faad14' }} /> 我的SQL ({dbFilteredQueries.length})</span>
-        } key="favorites">
-          <div style={{ padding: 8, borderBottom: '1px solid #eee' }}>
-            <Input size="small" placeholder="搜索 SQL..." prefix={<SearchOutlined />} value={searchText} onChange={e => setSearchText(e.target.value)} allowClear />
-          </div>
-          <div style={{ padding: 8, display: 'flex', gap: 4 }}>
-            <Button size="small" icon={<StarOutlined />} onClick={handleAddFavorite} type="primary">添加当前SQL到收藏</Button>
-          </div>
-          <div style={{ flex: 1, overflow: 'auto' }}>
-            {filteredSavedQueries.length === 0 ? (
-              <Empty description="暂无保存的SQL" style={{ marginTop: 40 }} />
-            ) : (
-              filteredSavedQueries.map((q: any) => (
-                <div key={q.id} style={{ padding: '8px 12px', borderBottom: '1px solid #f0f0f0', cursor: 'pointer' }} onClick={() => onUseQuery(q.sql)}>
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                      {q.isFavorite && <StarFilled style={{ fontSize: 11, color: '#faad14' }} />}
-                      <span style={{ fontWeight: 500, fontSize: 12 }}>{q.name}</span>
-                      <Rate disabled value={getPopularityRate(q.executionCount || 0)} count={5} style={{ fontSize: 10 }} />
-                    </div>
-                    <div style={{ display: 'flex', gap: 4 }}>
-                      <Button size="small" type="text" icon={<EditOutlined />} onClick={(e) => { e.stopPropagation(); handleEdit(q); }} />
-                      <Popconfirm title="删除此SQL?" onConfirm={() => handleDelete(q.id)}><Button size="small" type="text" danger onClick={(e) => e.stopPropagation()} icon={<DeleteOutlined />} /></Popconfirm>
-                    </div>
-                  </div>
-                  <div style={{ fontSize: 10, color: '#999', marginTop: 4, fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{q.sql.slice(0, 80)}...</div>
-                  <div style={{ fontSize: 10, color: '#bbb', marginTop: 2 }}>执行 {q.executionCount || 0}次 · {new Date(q.createdAt).toLocaleDateString()}</div>
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden', background: '#fff' }}>
+      <div style={{ display: 'flex', alignItems: 'center', padding: '4px 8px', borderBottom: '1px solid #e8e8e8', background: '#fafafa', gap: 6, flexShrink: 0 }}>
+        <Input size="small" placeholder="Filter..." prefix={<SearchOutlined style={{ color: '#bbb' }} />} value={searchText} onChange={e => setSearchText(e.target.value)} allowClear style={{ width: 130, fontSize: 11 }} />
+        <div style={{ flex: 1 }} />
+        <Tooltip title="添加收藏">
+          <Button type="text" size="small" icon={<StarOutlined />} onClick={handleAddFavorite}></Button>
+        </Tooltip>
+        <Tabs activeKey={panelTab} onChange={setPanelTab} size="small" tabBarStyle={{ margin: 0, minHeight: 24, borderBottom: 'none' }} style={{ flexShrink: 0 }}
+          items={[
+            { key: 'favorites', label: <span style={{ fontSize: 11 }}>收藏</span>, children: null },
+            { key: 'history', label: <span style={{ fontSize: 11 }}>历史</span>, children: null },
+          ]}
+        />
+      </div>
+      <div style={{ flex: 1, overflow: 'auto' }}>
+        <Table
+          dataSource={panelTab === 'favorites' ? filteredSavedQueries : filteredHistory}
+          rowKey="id"
+          size="small"
+          pagination={{ size: 'small', pageSize: 20, showSizeChanger: false, showTotal: (t: number) => `${t} 条` }}
+          showHeader={false}
+          locale={{ emptyText: <div style={{ color: '#bbb', padding: 20 }}>{panelTab === 'favorites' ? '暂无收藏' : '暂无历史'}</div> }}
+          onRow={(record: any) => ({
+            onClick: () => onUseQuery(record.sql),
+            style: { cursor: 'pointer' },
+          })}
+          columns={panelTab === 'favorites' ? [
+            {
+              title: '', dataIndex: 'name', key: 'name',
+              render: (_: any, q: any) => (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  {q.isFavorite && <StarFilled style={{ fontSize: 10, color: '#faad14' }} />}
+                  <span style={{ fontWeight: 500, fontSize: 12 }}>{q.name}</span>
+                  <Rate disabled value={getPopularityRate(q.executionCount || 0)} count={5} style={{ fontSize: 10 }} />
                 </div>
-              ))
-            )}
-          </div>
-        </Tabs.TabPane>
-        <Tabs.TabPane tab={<span><ClockCircleOutlined /> 执行历史</span>} key="history">
-          <div style={{ padding: 8, borderBottom: '1px solid #eee', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <span style={{ fontSize: 11, color: '#999' }}>共 {dbFilteredHistory.length} 条记录</span>
-            {dbFilteredHistory.length > 0 && <Button size="small" danger onClick={handleClearHistory}>清空</Button>}
-          </div>
-          <div style={{ flex: 1, overflow: 'auto' }}>
-            {filteredHistory.length === 0 ? (
-            <Empty description="暂无执行历史" style={{ marginTop: 40 }} />
-          ) : (
-            filteredHistory.slice(0, 100).map((h: any) => (
-              <div key={h.id} style={{ padding: '6px 12px', borderBottom: '1px solid #f0f0f0', cursor: 'pointer' }} onClick={() => onUseQuery(h.sql)}>
-                <div style={{ fontSize: 10, color: '#666', fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{h.sql.slice(0, 100)}</div>
-                <div style={{ fontSize: 10, color: '#bbb', marginTop: 2 }}>{new Date(h.timestamp).toLocaleString()} · {h.duration}ms</div>
-              </div>
-            ))
-          )}
-          </div>
-        </Tabs.TabPane>
-      </Tabs>
-      <Modal title="编辑SQL" open={editModalOpen} onOk={handleSaveEdit} onCancel={() => setEditModalOpen(false)} okText="保存" cancelText="取消">
+              ),
+            },
+            {
+              title: '', key: 'sql',
+              render: (_: any, q: any) => (
+                <div style={{ fontSize: 11, color: '#888', fontFamily: 'Consolas, Monaco, monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {q.sql.slice(0, 100)}{q.sql.length > 100 ? '\u2026' : ''}
+                </div>
+              ),
+            },
+            {
+              title: '', key: 'info', width: 100,
+              render: (_: any, q: any) => (
+                <span style={{ fontSize: 10, color: '#bbb' }}>{q.executionCount || 0}次 · {dayjs(q.createdAt).format('MM-DD HH:mm')}</span>
+              ),
+            },
+            {
+              title: '', key: 'actions', width: 60,
+              render: (_: any, q: any) => (
+                <Space size={0}>
+                  <Button type="text" size="small" icon={<EditOutlined style={{ fontSize: 12 }} />} onClick={(e) => { e.stopPropagation(); handleEdit(q); }} />
+                  <Popconfirm title="Delete?" onConfirm={() => handleDelete(q.id)}>
+                    <Button type="text" size="small" danger icon={<DeleteOutlined style={{ fontSize: 12 }} />} onClick={e => e.stopPropagation()} />
+                  </Popconfirm>
+                </Space>
+              ),
+            },
+          ] : [
+            {
+              title: '', key: 'sql',
+              render: (_: any, h: any) => (
+                <div style={{ fontSize: 11, color: '#666', fontFamily: 'Consolas, Monaco, monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {h.sql.slice(0, 120)}{h.sql.length > 120 ? '\u2026' : ''}
+                </div>
+              ),
+            },
+            {
+              title: '', key: 'info', width: 140,
+              render: (_: any, h: any) => (
+                <span style={{ fontSize: 10, color: '#bbb' }}>
+                  {dayjs(h.timestamp || h.executedAt).format('MM-DD HH:mm:ss')} · {h.duration || h.executionTime}ms
+                </span>
+              ),
+            },
+          ]}
+        />
+      </div>
+      <Modal title={editingQuery ? '编辑SQL' : '添加收藏'} open={editModalOpen} onOk={handleSaveEdit} onCancel={() => setEditModalOpen(false)} okText={editingQuery ? '保存' : '添加'}>
         <div style={{ marginBottom: 12 }}>
-          <label style={{ display: 'block', fontSize: 12, color: '#666', marginBottom: 4 }}>名称</label>
-          <Input value={editForm.name} onChange={(e) => setEditForm(prev => ({ ...prev, name: e.target.value }))} />
+          <label style={{ display: 'block', fontSize: 12, color: '#666', marginBottom: 4 }}>Name</label>
+          <Input value={editForm.name} onChange={e => setEditForm(prev => ({ ...prev, name: e.target.value }))} />
         </div>
         <div>
           <label style={{ display: 'block', fontSize: 12, color: '#666', marginBottom: 4 }}>SQL</label>
-          <Input.TextArea value={editForm.sql} rows={6} onChange={(e) => setEditForm(prev => ({ ...prev, sql: e.target.value }))} style={{ fontFamily: 'Consolas, monospace' }} />
+          <Input.TextArea value={editForm.sql} rows={6} onChange={e => setEditForm(prev => ({ ...prev, sql: e.target.value }))} style={{ fontFamily: 'Consolas, monospace' }} />
         </div>
       </Modal>
     </div>
@@ -1391,7 +1336,7 @@ const SqlEditor: React.FC<SqlEditorProps> = () => {
                   {
                     key: 'my-sql',
                     label: <span style={{ fontSize: 11 }}>
-                      我的SQL {savedQueries.length > 0 && <Tag color="blue" style={{ marginLeft: 4, fontSize: 10, lineHeight: '14px' }}>{savedQueries.length}</Tag>}
+                      我的SQL
                     </span>,
                     closable: false,
                     children: null,
@@ -1425,7 +1370,7 @@ const SqlEditor: React.FC<SqlEditorProps> = () => {
 
             {activeResultKey === 'my-sql' ? (
 
-              <BottomPanel visible={true} activeTabData={activeTabData} onUseQuery={handleUseFromBottom} />
+              <BottomPanel visible={true} activeTabData={activeTabData} onUseQuery={handleUseFromBottom} editorRef={editorRef} />
 
             ) : currentResult?._dataChangeBlocked ? (
 
@@ -1493,7 +1438,8 @@ const SqlEditor: React.FC<SqlEditorProps> = () => {
 
               </div>
 
-            ) : currentResult?.data?.length ? (
+            ) : currentResult?.columns?.length ? (
+              /* 有列名就是查询结果（含空结果），始终展示表格 */
 
               (() => {
 

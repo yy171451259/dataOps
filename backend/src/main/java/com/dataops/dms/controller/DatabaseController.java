@@ -36,23 +36,30 @@ public class DatabaseController {
     private ResourceOwnerService resourceOwnerService;
 
     /**
-     * 获取所有数据库实例列表（含访问控制过滤）
+     * 获取数据库实例列表
+     * <p>
+     * 默认按访问控制过滤（受限实例只对 Owner 和已授权用户可见）。
+     * 当 {@code all=true} 时返回所有实例，用于权限申请页面让用户可选择需要申请权限的资源。
      */
     @GetMapping
     @Operation(summary = "获取实例列表")
-    public Result<List<DatabaseInstance>> list(HttpServletRequest request) {
+    public Result<List<DatabaseInstance>> list(
+            @RequestParam(required = false, defaultValue = "false") Boolean all,
+            HttpServletRequest request) {
         LambdaQueryWrapper<DatabaseInstance> wrapper = new LambdaQueryWrapper<>();
         wrapper.orderByDesc(DatabaseInstance::getCreateTime);
-        List<DatabaseInstance> allInstances = databaseInstanceService.list(wrapper);
+        List<DatabaseInstance> instances = databaseInstanceService.list(wrapper);
 
         // 访问控制过滤：受限实例只对 Owner 和已授权用户可见
-        String userId = (String) request.getAttribute("userId");
-        if (userId != null) {
-            allInstances = allInstances.stream()
-                    .filter(inst -> accessControlService.canUserAccess(userId, "instance", inst.getId()))
-                    .collect(Collectors.toList());
+        if (!Boolean.TRUE.equals(all)) {
+            String userId = (String) request.getAttribute("userId");
+            if (userId != null) {
+                instances = instances.stream()
+                        .filter(inst -> accessControlService.canUserAccess(userId, "instance", inst.getId()))
+                        .collect(Collectors.toList());
+            }
         }
-        return Result.success(allInstances);
+        return Result.success(instances);
     }
 
     /**
@@ -163,19 +170,27 @@ public class DatabaseController {
     }
 
     /**
-     * 获取实例下的所有Schema列表（含访问控制过滤）
+     * 获取实例下的 Schema 列表
+     * <p>
+     * 默认按访问控制过滤（受限 Schema 只对 Owner 和已授权用户可见）。
+     * 当 {@code all=true} 时返回所有 Schema，用于权限申请页面让用户可选择需要申请权限的 Schema。
      */
     @GetMapping("/{id}/schemas")
     @Operation(summary = "获取Schema列表（SHOW DATABASES）")
-    public Result<List<String>> getSchemas(@PathVariable String id, HttpServletRequest request) {
+    public Result<List<String>> getSchemas(
+            @PathVariable String id,
+            @RequestParam(required = false, defaultValue = "false") Boolean all,
+            HttpServletRequest request) {
         try {
             List<String> schemas = databaseInstanceService.getSchemaNames(id);
-            // 访问控制过滤：受限Schema只对 Owner 和已授权用户可见
-            String userId = (String) request.getAttribute("userId");
-            if (userId != null) {
-                schemas = schemas.stream()
-                        .filter(schema -> accessControlService.canUserAccess(userId, "database", schema))
-                        .collect(Collectors.toList());
+            // 访问控制过滤：受限 Schema 只对 Owner 和已授权用户可见
+            if (!Boolean.TRUE.equals(all)) {
+                String userId = (String) request.getAttribute("userId");
+                if (userId != null) {
+                    schemas = schemas.stream()
+                            .filter(schema -> accessControlService.canUserAccess(userId, "database", schema))
+                            .collect(Collectors.toList());
+                }
             }
             return Result.success(schemas);
         } catch (Exception e) {

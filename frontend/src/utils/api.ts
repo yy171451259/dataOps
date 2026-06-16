@@ -56,6 +56,10 @@ export const instanceApi = {
   test: (id: string) => api.post(`/instances/${id}/test`),
   // 获取实例下的所有Schema列表
   getSchemas: (id: string) => api.get(`/instances/${id}/schemas`),
+  // 获取实例下的所有Schema列表（不做权限过滤，用于权限申请页面）
+  getSchemasAll: (id: string) => api.get(`/instances/${id}/schemas`, { params: { all: true } }),
+  // 获取实例列表（不做权限过滤，用于权限申请页面）
+  listAll: () => api.get('/instances', { params: { all: true } }),
   // 获取表列表
   getTableNames: (id: string, schemaName?: string) => api.get(`/instances/${id}/tables`, { params: { schemaName } }),
   // 获取单张表的建表语句

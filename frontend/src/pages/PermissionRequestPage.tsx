@@ -105,7 +105,7 @@ const PermissionRequestPage: React.FC = () => {
 
   const loadDatabases = async () => {
     try {
-      const res = await instanceApi.list();
+      const res = await instanceApi.listAll();
       const data = Array.isArray(res?.data?.data) ? res.data.data : [];
       setInstances(data.map((db: any) => ({
         id: db.id || db.name, name: db.name || db.id,
@@ -149,7 +149,7 @@ const PermissionRequestPage: React.FC = () => {
     // 展开时加载数据库列表
     if (isExpanding && !databaseCache[id]) {
       try {
-        const res = await instanceApi.getSchemas(id);
+        const res = await instanceApi.getSchemasAll(id);
         const dbs = Array.isArray(res?.data?.data) ? res.data.data : [];
         // 后端返回的是字符串数组，转换为对象数组格式
         const formattedDbs = dbs.map((db: string | { name: string }) =>
