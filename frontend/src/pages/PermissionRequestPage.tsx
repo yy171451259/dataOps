@@ -11,7 +11,6 @@ import {
   CheckCircleFilled, CloseCircleFilled,
 } from '@ant-design/icons';
 import dayjs from 'dayjs';
-import { useAuthStore } from '../store/useAuthStore';
 import { permissionRequestApi, instanceApi } from '../utils/api';
 
 const { Option } = Select;
@@ -64,7 +63,6 @@ const expireOptions = [
 ];
 
 const PermissionRequestPage: React.FC = () => {
-  const { hasPermission } = useAuthStore();
   const [activeTab, setActiveTab] = useState('my');
 
   // Tab 1: 我的申请
@@ -82,10 +80,6 @@ const PermissionRequestPage: React.FC = () => {
   const [databaseCache, setDatabaseCache] = useState<Record<string, any[]>>({});
   const [searchKeyword, setSearchKeyword] = useState('');
 
-  // Tab 3: 待审批
-  const [pendingRequests, setPendingRequests] = useState<PermissionRequest[]>([]);
-  const [pendingLoading, setPendingLoading] = useState(false);
-
   // Approve/Reject modal
   const [approveVisible, setApproveVisible] = useState(false);
   const [approveAction, setApproveAction] = useState<'approve' | 'reject'>('approve');
@@ -98,7 +92,6 @@ const PermissionRequestPage: React.FC = () => {
 
   useEffect(() => {
     if (activeTab === 'my') loadMyRequests();
-    if (activeTab === 'pending' && hasPermission('ticket:approve')) loadPendingRequests();
   }, [activeTab]);
 
   useEffect(() => {
@@ -127,18 +120,6 @@ const PermissionRequestPage: React.FC = () => {
       setMyRequests([]);
     } finally {
       setMyLoading(false);
-    }
-  };
-
-  const loadPendingRequests = async () => {
-    setPendingLoading(true);
-    try {
-      const res = await permissionRequestApi.pending();
-      setPendingRequests(Array.isArray(res?.data?.data) ? res.data.data : []);
-    } catch {
-      setPendingRequests([]);
-    } finally {
-      setPendingLoading(false);
     }
   };
 
@@ -256,7 +237,6 @@ const PermissionRequestPage: React.FC = () => {
       }
       setApproveVisible(false);
       commentForm.resetFields();
-      loadPendingRequests();
     } catch (e: any) {
       message.error(e?.response?.data?.message || '操作失败');
     }
@@ -269,106 +249,69 @@ const PermissionRequestPage: React.FC = () => {
 
   const myColumns = [
     {
-      title: '申请时间', dataIndex: 'createTime', key: 'createTime', width: 160,
-      render: (t: string) => t ? dayjs(t).format('YYYY-MM-DD HH:mm:ss') : '-',
+      title: '工单号', dataIndex: 'id', key: 'id', width: 150,
+      render: (id: string) => <span style={{ fontFamily: 'monospace' }}>{id ? id.slice(0, 10) : '-'}</span>,
     },
     {
-      title: '资源类型', dataIndex: 'resourceType', key: 'resourceType', width: 100,
-      render: (t: string) => <Tag>{resourceTypeLabels[t] || t}</Tag>,
-    },
-    { title: '资源名称', dataIndex: 'resourceName', key: 'resourceName', ellipsis: true },
-    {
-      title: '申请权限', dataIndex: 'permissions', key: 'permissions',
-      render: (perms: string[]) => (
-        <Space size={[2, 2]} wrap>
-          {(perms || []).map((p) => (
-            <Tag key={p} color="blue" style={{ fontSize: 12 }}>{p}</Tag>
-          ))}
-        </Space>
+      title: '原因', dataIndex: 'resourceName', key: 'reason', width: 240,
+      render: (_: string, r: PermissionRequest) => (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <Tag color="default" style={{ marginRight: 0 }}>{resourceTypeLabels[r.resourceType] || r.resourceType}</Tag>
+          <span style={{ color: '#222' }}>{r.resourceName || '-'}</span>
+          {r.reason && (
+            <Tooltip title={r.reason}>
+              <span style={{ color: '#999', fontSize: 12, marginLeft: 8 }}>
+                ({r.reason.length > 20 ? r.reason.slice(0, 20) + '...' : r.reason})
+              </span>
+            </Tooltip>
+          )}
+        </div>
       ),
     },
     {
-      title: '状态', dataIndex: 'status', key: 'status', width: 100,
+      title: '工单类型', dataIndex: 'resourceType', key: 'ticketType', width: 120,
+      render: (t: string) => {
+        const label = resourceTypeLabels[t] || t;
+        return <Tag color="geekblue">{label}权限</Tag>;
+      },
+    },
+    {
+      title: '当前状态', dataIndex: 'status', key: 'status', width: 100,
       render: (s: string) => {
         const st = statusMap[s] || { color: 'default', text: s };
         return <Badge status={st.color as any} text={st.text} />;
       },
     },
     {
-      title: '审批人', dataIndex: 'approverName', key: 'approverName', width: 100,
+      title: '发起人', dataIndex: 'applicantName', key: 'applicantName', width: 110,
+      render: (n: string, r: PermissionRequest) => n || r.applicantId || '-',
+    },
+    {
+      title: '当前处理人', dataIndex: 'approverName', key: 'approverName', width: 110,
       render: (n: string, r: PermissionRequest) => n || r.approverId || '-',
     },
     {
-      title: '审批意见', dataIndex: 'approverComment', key: 'approverComment', width: 160, ellipsis: true,
-      render: (c: string) => c ? <Tooltip title={c}>{c}</Tooltip> : '-',
+      title: '创建时间', dataIndex: 'createTime', key: 'createTime', width: 170,
+      render: (t: string) => t ? dayjs(t).format('YYYY-MM-DD HH:mm:ss') : '-',
+      sorter: (a: any, b: any) => dayjs(a.createTime).valueOf() - dayjs(b.createTime).valueOf(),
     },
     {
-      title: '操作', key: 'action', width: 120, fixed: 'right' as const,
+      title: '最后操作时间', dataIndex: 'updateTime', key: 'updateTime', width: 170,
+      render: (t: string) => t ? dayjs(t).format('YYYY-MM-DD HH:mm:ss') : '-',
+      sorter: (a: any, b: any) => dayjs(a.updateTime || a.createTime).valueOf() - dayjs(b.updateTime || b.createTime).valueOf(),
+    },
+    {
+      title: '操作', key: 'action', width: 130, fixed: 'right' as const,
       render: (_: any, record: PermissionRequest) => (
         <Space size="small">
-          <Button type="link" size="small" icon={<EyeOutlined />} onClick={() => showDetail(record)}>
+          <Button type="link" size="small" onClick={() => showDetail(record)}>
             详情
           </Button>
           {record.status === 'pending' && (
             <Popconfirm title="确定撤销这申请？" onConfirm={() => handleCancel(record.id)}>
-              <Button type="link" danger size="small" icon={<UndoOutlined />}>撤销</Button>
+              <Button type="link" danger size="small">撤销</Button>
             </Popconfirm>
           )}
-        </Space>
-      ),
-    },
-  ];
-
-  const pendingColumns = [
-    {
-      title: '申请时间', dataIndex: 'createTime', key: 'createTime', width: 160,
-      render: (t: string) => t ? dayjs(t).format('YYYY-MM-DD HH:mm:ss') : '-',
-    },
-    {
-      title: '申请人', dataIndex: 'applicantName', key: 'applicantName', width: 100,
-      render: (n: string, r: PermissionRequest) => n || r.applicantId || '-',
-    },
-    {
-      title: '资源类型', dataIndex: 'resourceType', key: 'resourceType', width: 100,
-      render: (t: string) => <Tag>{resourceTypeLabels[t] || t}</Tag>,
-    },
-    { title: '资源名称', dataIndex: 'resourceName', key: 'resourceName', ellipsis: true },
-    {
-      title: '申请权限', dataIndex: 'permissions', key: 'permissions',
-      render: (perms: string[]) => (
-        <Space size={[2, 2]} wrap>
-          {(perms || []).map((p) => (
-            <Tag key={p} color="blue" style={{ fontSize: 12 }}>{p}</Tag>
-          ))}
-        </Space>
-      ),
-    },
-    {
-      title: '申请原因', dataIndex: 'reason', key: 'reason', width: 200, ellipsis: true,
-      render: (r: string) => r ? <Tooltip title={r}>{r}</Tooltip> : '-',
-    },
-    {
-      title: '操作', key: 'action', width: 160, fixed: 'right' as const,
-      render: (_: any, record: PermissionRequest) => (
-        <Space size="small">
-          <Button
-            type="link"
-            size="small"
-            icon={<CheckOutlined />}
-            style={{ color: '#52c41a' }}
-            onClick={() => openApproveModal(record, 'approve')}
-          >
-            通过
-          </Button>
-          <Button
-            type="link"
-            danger
-            size="small"
-            icon={<CloseOutlined />}
-            onClick={() => openApproveModal(record, 'reject')}
-          >
-            拒绝
-          </Button>
         </Space>
       ),
     },
@@ -391,7 +334,7 @@ const PermissionRequestPage: React.FC = () => {
             rowKey="id"
             loading={myLoading}
             pagination={{ pageSize: 15, showTotal: (t: number) => `共 ${t} 条申请` }}
-            scroll={{ x: 1100 }}
+            scroll={{ x: 1500 }}
             size="small"
             locale={{ emptyText: <Empty description="暂无申请记录" /> }}
           />
@@ -581,39 +524,6 @@ const PermissionRequestPage: React.FC = () => {
       ),
     },
   ];
-
-  // 只有拥有审批权限的用户才能看到待审批标签
-  if (hasPermission('ticket:approve')) {
-    tabItems.push({
-      key: 'pending',
-      label: (
-        <span>
-          <Badge count={pendingRequests.length} size="small" offset={[6, 0]}>
-            待审批
-          </Badge>
-        </span>
-      ),
-      children: (
-        <Card>
-          <div style={{ marginBottom: 16 }}>
-            <Button icon={<ReloadOutlined />} onClick={loadPendingRequests} loading={pendingLoading}>
-              刷新
-            </Button>
-          </div>
-          <Table
-            dataSource={pendingRequests}
-            columns={pendingColumns}
-            rowKey="id"
-            loading={pendingLoading}
-            pagination={{ pageSize: 15, showTotal: (t: number) => `共 ${t} 条待审批` }}
-            scroll={{ x: 1100 }}
-            size="small"
-            locale={{ emptyText: <Empty description="暂无待审批申请" /> }}
-          />
-        </Card>
-      ),
-    });
-  }
 
   return (
     <div>

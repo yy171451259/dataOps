@@ -13,7 +13,7 @@ import java.time.LocalDateTime;
  * 用户申请数据资源访问权限的工单记录
  */
 @Data
-@TableName("sys_permission_request")
+@TableName("sys_user_permission_request")
 public class PermissionRequest {
 
     @TableId(type = IdType.ASSIGN_UUID)

@@ -42,7 +42,7 @@ new = """      </>)}
       <Modal title="新建结构设计工单" open={newTicketDbModalVisible} onCancel={() => setNewTicketDbModalVisible(false)} onOk={confirmNewTicketDb} okText="进入设计" width={450}>
         <Form layout="vertical">
           <Form.Item label="目标数据库实例" required>
-            <Select placeholder="请选择数据库" value={newTicketDbId || undefined} onChange={v => setNewTicketDbId(v)} style={{ width: '100%' }}>
+            <Select placeholder="请选择Schema" value={newTicketDbId || undefined} onChange={v => setNewTicketDbId(v)} style={{ width: '100%' }}>
               {databaseList.map((db: any) => (
                 <Option key={db.id} value={db.id}>{db.name} ({db.host}:{db.port})</Option>
               ))}

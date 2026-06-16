@@ -2,10 +2,10 @@ package com.dataops.dms.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
-import com.dataops.dms.entity.Permission;
 import com.dataops.dms.entity.PermissionRequest;
-import com.dataops.dms.mapper.PermissionMapper;
+import com.dataops.dms.entity.UserPermission;
 import com.dataops.dms.mapper.PermissionRequestMapper;
+import com.dataops.dms.mapper.UserPermissionMapper;
 import com.dataops.dms.service.PermissionRequestService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -19,7 +19,7 @@ import java.util.List;
 public class PermissionRequestServiceImpl extends ServiceImpl<PermissionRequestMapper, PermissionRequest> implements PermissionRequestService {
 
     @javax.annotation.Resource
-    private PermissionMapper permissionMapper;
+    private UserPermissionMapper userPermissionMapper;
 
     @javax.annotation.Resource
     private com.dataops.dms.service.ResourceOwnerService resourceOwnerService;
@@ -61,47 +61,89 @@ public class PermissionRequestServiceImpl extends ServiceImpl<PermissionRequestM
 
     /**
      * 审批通过后自动授予资源级权限
+     * <p>
+     * 注意：申请提交时的 resourceId 格式为 "instanceId" 或 "instanceId:schemaName"，
+     * 但权限检查时使用不同的格式：
+     * - 左侧树 Schema 可见性检查：resourceType="database", resourceId=schemaName
+     * - SQL 执行权限检查：resourceType="schema", resourceId=instanceId
+     * - 实例级权限检查：resourceType="instance", resourceId=instanceId
      */
     private void autoGrantPermissions(PermissionRequest request) {
         try {
             String applicantId = request.getApplicantId();
             String resourceId = request.getResourceId();
             String resourceType = request.getResourceType();
-            // requestedPermissions 格式: ["query","export"] 或 "query,export"
             String perms = request.getRequestedPermissions();
             
             if (perms == null || perms.isEmpty()) return;
+            if (resourceId == null || resourceId.isEmpty()) return;
 
-            // 解析权限
+            // 解析 resourceId：可能是 instanceId 或 instanceId:schemaName
+            String instanceIdPart = resourceId;
+            String schemaNamePart = null;
+            int colonIdx = resourceId.indexOf(':');
+            if (colonIdx > 0) {
+                instanceIdPart = resourceId.substring(0, colonIdx);
+                schemaNamePart = resourceId.substring(colonIdx + 1);
+                if (schemaNamePart != null && schemaNamePart.isEmpty()) {
+                    schemaNamePart = null;
+                }
+            }
+
+            // 解析权限操作类型
             String[] permArray = perms.replace("[", "").replace("]", "").replace("\"", "").split(",");
             LocalDateTime expireTime = request.getExpiredAt();
+
+            // 根据资源类型确定需要写入的权限条目
+            // 每个条目是 (写入的 resourceType, 写入的 resourceId)
+            java.util.List<java.util.Map.Entry<String, String>> permEntries = new java.util.ArrayList<>();
+
+            if ("instance".equals(resourceType)) {
+                // 实例级权限：只写 instance -> instance (保持与检查逻辑一致)
+                permEntries.add(new java.util.AbstractMap.SimpleEntry<>("instance", instanceIdPart));
+            } else if (schemaNamePart != null) {
+                // Schema 级权限：同时写 2 条，确保可见性和SQL执行都能匹配
+                // 1) database + schemaName —— 左侧树 Schema 列表可见性检查 (DatabaseController)
+                // 2) schema + instanceId —— SQL 执行权限检查 (SqlController)
+                permEntries.add(new java.util.AbstractMap.SimpleEntry<>("database", schemaNamePart));
+                permEntries.add(new java.util.AbstractMap.SimpleEntry<>("schema", instanceIdPart));
+            } else {
+                // 回退：未知格式，按原始值写入
+                permEntries.add(new java.util.AbstractMap.SimpleEntry<>(resourceType != null ? resourceType : "schema", resourceId));
+            }
 
             for (String p : permArray) {
                 String action = p.trim();
                 if (action.isEmpty()) continue;
 
-                // 检查是否已存在相同权限（避免重复）
-                LambdaQueryWrapper<Permission> checkWrapper = new LambdaQueryWrapper<>();
-                checkWrapper.eq(Permission::getRoleId, applicantId)
-                           .eq(Permission::getResourceType, resourceType)
-                           .eq(Permission::getResourceId, resourceId)
-                           .eq(Permission::getAction, action);
-                Long existCount = permissionMapper.selectCount(checkWrapper);
+                for (java.util.Map.Entry<String, String> entry : permEntries) {
+                    String writeType = entry.getKey();
+                    String writeId = entry.getValue();
 
-                if (existCount > 0) continue; // 已存在则跳过
+                    // 检查是否已存在相同权限（避免重复）
+                    LambdaQueryWrapper<UserPermission> checkWrapper = new LambdaQueryWrapper<>();
+                    checkWrapper.eq(UserPermission::getUserId, applicantId)
+                               .eq(UserPermission::getResourceType, writeType)
+                               .eq(UserPermission::getResourceId, writeId)
+                               .eq(UserPermission::getAction, action);
+                    Long existCount = userPermissionMapper.selectCount(checkWrapper);
 
-                Permission permission = new Permission();
-                permission.setRoleId(applicantId);
-                permission.setResourceType(resourceType != null ? resourceType : "schema");
-                permission.setResourceId(resourceId);
-                permission.setResourceName(request.getResourceName() != null ? request.getResourceName() : resourceId);
-                permission.setAction(action);  // query / export / update / ddl
-                permission.setFieldList(null); // 全部字段
-                permission.setExpireTime(expireTime);
-                permission.setCreateTime(LocalDateTime.now());
+                    if (existCount > 0) continue; // 已存在则跳过
 
-                permissionMapper.insert(permission);
-                log.info("自动授权: 用户={}, 资源={}, 权限={}", applicantId, resourceId, action);
+                    UserPermission up = new UserPermission();
+                    up.setUserId(applicantId);
+                    up.setResourceType(writeType);
+                    up.setResourceId(writeId);
+                    up.setResourceName(request.getResourceName() != null ? request.getResourceName() : resourceId);
+                    up.setAction(action);  // query / export / update / ddl
+                    up.setFieldList(null); // 全部字段
+                    up.setExpireTime(expireTime);
+                    up.setGrantedBy(request.getApproverId());
+                    up.setGrantedAt(LocalDateTime.now());
+
+                    userPermissionMapper.insert(up);
+                    log.info("自动授权: 用户={}, 资源类型={}, 资源ID={}, 权限={}", applicantId, writeType, writeId, action);
+                }
             }
 
             log.info("审批通过: 用户 {} 已获得资源 {} 的访问权限", applicantId, resourceId);

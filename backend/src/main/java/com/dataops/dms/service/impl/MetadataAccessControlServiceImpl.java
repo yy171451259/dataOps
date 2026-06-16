@@ -3,9 +3,9 @@ package com.dataops.dms.service.impl;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.dataops.dms.entity.MetadataAccessControl;
-import com.dataops.dms.entity.Permission;
+import com.dataops.dms.entity.UserPermission;
 import com.dataops.dms.mapper.MetadataAccessControlMapper;
-import com.dataops.dms.mapper.PermissionMapper;
+import com.dataops.dms.mapper.UserPermissionMapper;
 import com.dataops.dms.mapper.RoleMapper;
 import com.dataops.dms.service.MetadataAccessControlService;
 import com.dataops.dms.service.ResourceOwnerService;
@@ -28,7 +28,7 @@ public class MetadataAccessControlServiceImpl extends ServiceImpl<MetadataAccess
     private ResourceOwnerService resourceOwnerService;
 
     @Resource
-    private PermissionMapper permissionMapper;
+    private UserPermissionMapper userPermissionMapper;
 
     @Resource
     private RoleMapper roleMapper;
@@ -128,14 +128,14 @@ public class MetadataAccessControlServiceImpl extends ServiceImpl<MetadataAccess
         if (resourceOwnerService.checkIsOwner(userId, resourceType, resourceId)) {
             return true;
         }
-        // 检查2: 用户是否有未过期的 Permission 记录（任一操作类型）
-        LambdaQueryWrapper<Permission> permWrapper = new LambdaQueryWrapper<>();
-        permWrapper.eq(Permission::getRoleId, userId)
-                .eq(Permission::getResourceType, resourceType)
-                .eq(Permission::getResourceId, resourceId);
-        java.util.List<Permission> permissions = permissionMapper.selectList(permWrapper);
+        // 检查2: 用户是否有未过期的 UserPermission 记录（任一操作类型）
+        LambdaQueryWrapper<UserPermission> permWrapper = new LambdaQueryWrapper<>();
+        permWrapper.eq(UserPermission::getUserId, userId)
+                .eq(UserPermission::getResourceType, resourceType)
+                .eq(UserPermission::getResourceId, resourceId);
+        java.util.List<UserPermission> permissions = userPermissionMapper.selectList(permWrapper);
         LocalDateTime now = LocalDateTime.now();
-        for (Permission p : permissions) {
+        for (UserPermission p : permissions) {
             if (p.getExpireTime() == null || p.getExpireTime().isAfter(now)) {
                 return true;
             }
@@ -155,18 +155,18 @@ public class MetadataAccessControlServiceImpl extends ServiceImpl<MetadataAccess
         if (resourceOwnerService.checkIsOwner(userId, resourceType, resourceId)) {
             return true;
         }
-        // 3. 检查用户是否有指定操作类型的有效Permission
-        LambdaQueryWrapper<Permission> permWrapper = new LambdaQueryWrapper<>();
-        permWrapper.eq(Permission::getRoleId, userId)
-                .eq(Permission::getResourceType, resourceType)
-                .eq(Permission::getResourceId, resourceId)
-                .and(w -> w.eq(Permission::getAction, action)
+        // 3. 检查用户是否有指定操作类型的有效UserPermission
+        LambdaQueryWrapper<UserPermission> permWrapper = new LambdaQueryWrapper<>();
+        permWrapper.eq(UserPermission::getUserId, userId)
+                .eq(UserPermission::getResourceType, resourceType)
+                .eq(UserPermission::getResourceId, resourceId)
+                .and(w -> w.eq(UserPermission::getAction, action)
                         .or()
-                        .eq(Permission::getAction, "*")); // 支持"全部权限"
+                        .eq(UserPermission::getAction, "*")); // 支持"全部权限"
         
-        java.util.List<Permission> permissions = permissionMapper.selectList(permWrapper);
+        java.util.List<UserPermission> permissions = userPermissionMapper.selectList(permWrapper);
         LocalDateTime now = LocalDateTime.now();
-        for (Permission p : permissions) {
+        for (UserPermission p : permissions) {
             // expireTime 为 null 表示永不过期，否则检查是否未过期
             if (p.getExpireTime() == null || p.getExpireTime().isAfter(now)) {
                 return true;

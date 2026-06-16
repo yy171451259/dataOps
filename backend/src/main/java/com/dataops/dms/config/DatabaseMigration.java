@@ -40,7 +40,14 @@ public class DatabaseMigration implements CommandLineRunner {
             }
 
             // Permission table: add fine-grained permission columns
-            addColumnIfNotExists(conn, "sys_permission", "role_id", "VARCHAR(64) COMMENT '角色/用户ID'");
+            // 如果存在旧列 role_id 但不存在 user_id，先改名再继续
+            if (columnExists(conn, "sys_permission", "role_id") && !columnExists(conn, "sys_permission", "user_id")) {
+                try (Statement stmt = conn.createStatement()) {
+                    stmt.execute("ALTER TABLE `sys_permission` CHANGE COLUMN `role_id` `user_id` VARCHAR(64) COMMENT '用户ID（资源级权限被授权用户）'");
+                    log.info("Migration: Renamed sys_permission.role_id -> user_id");
+                }
+            }
+            addColumnIfNotExists(conn, "sys_permission", "user_id", "VARCHAR(64) COMMENT '用户ID（资源级权限被授权用户）'");
             addColumnIfNotExists(conn, "sys_permission", "resource_type", "VARCHAR(32) COMMENT '资源类型: schema/table/column'");
             addColumnIfNotExists(conn, "sys_permission", "resource_id", "VARCHAR(128) COMMENT '资源ID'");
             addColumnIfNotExists(conn, "sys_permission", "resource_name", "VARCHAR(255) COMMENT '资源名称'");
@@ -188,6 +195,49 @@ public class DatabaseMigration implements CommandLineRunner {
 
             // 补齐 data_change_backup 表缺失字段
             addColumnIfNotExists(conn, "data_change_backup", "rollback_by", "VARCHAR(64) COMMENT '回滚操作人ID'");
+
+            // ============ V7: 数据权限体系分离 ============
+            // 1. 新建 sys_user_permission —— 存储用户级数据资源权限（替代原本混入 sys_permission 的数据权限记录）
+            createTableIfNotExists(conn, "sys_user_permission",
+                "CREATE TABLE sys_user_permission (" +
+                " id VARCHAR(64) NOT NULL COMMENT '主键ID'," +
+                " user_id VARCHAR(64) NOT NULL COMMENT '被授权用户ID'," +
+                " resource_type VARCHAR(32) NOT NULL COMMENT '资源类型: instance/schema/table/column'," +
+                " resource_id VARCHAR(128) NOT NULL COMMENT '资源ID'," +
+                " resource_name VARCHAR(255) COMMENT '资源名称（便于展示）'," +
+                " action VARCHAR(64) COMMENT '权限操作: query/export/update/ddl/*'," +
+                " field_list TEXT COMMENT '字段级权限(逗号分隔，null=全部字段)'," +
+                " expire_time DATETIME COMMENT '权限过期时间(null=永不过期)'," +
+                " granted_by VARCHAR(64) COMMENT '授权人ID'," +
+                " granted_at DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '授权时间'," +
+                " PRIMARY KEY (id)," +
+                " KEY idx_user_id (user_id)," +
+                " KEY idx_resource (resource_type, resource_id)," +
+                " KEY idx_expire (expire_time)" +
+                ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='用户-数据资源权限表（用户级数据访问权限）'");
+
+            // 2. 重命名 sys_permission_request → sys_user_permission_request（申请工单表）
+            if (tableExists(conn, "sys_permission_request") && !tableExists(conn, "sys_user_permission_request")) {
+                try (Statement stmt = conn.createStatement()) {
+                    stmt.execute("RENAME TABLE `sys_permission_request` TO `sys_user_permission_request`");
+                    log.info("Migration: Renamed sys_permission_request -> sys_user_permission_request");
+                }
+            }
+
+            // 3. 迁移旧权限数据（可选）：如果 sys_permission 中存在 resourceType/resourceId 的数据，迁移到新表
+            if (columnExists(conn, "sys_permission", "user_id") && columnExists(conn, "sys_permission", "resource_id")) {
+                try (Statement stmt = conn.createStatement();
+                     ResultSet rs = stmt.executeQuery("SELECT COUNT(*) AS cnt FROM sys_permission WHERE resource_id IS NOT NULL AND resource_id <> ''")) {
+                    if (rs.next() && rs.getInt("cnt") > 0) {
+                        int migrated = stmt.executeUpdate(
+                            "INSERT IGNORE INTO sys_user_permission " +
+                            "(id, user_id, resource_type, resource_id, resource_name, action, field_list, expire_time, granted_at) " +
+                            "SELECT UUID(), user_id, resource_type, resource_id, resource_name, action, field_list, expire_time, NOW() " +
+                            "FROM sys_permission WHERE resource_id IS NOT NULL AND resource_id <> ''");
+                        log.info("Migration: Migrated {} records from sys_permission to sys_user_permission", migrated);
+                    }
+                }
+            }
 
             // ============ V6: DDL项目工单表 ============
             createTableIfNotExists(conn, "ddl_project",

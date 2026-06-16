@@ -56,7 +56,7 @@ CREATE TABLE IF NOT EXISTS `sys_permission` (
     `action` VARCHAR(64) COMMENT '操作: read,write,export,ddl,*, etc.',
     `description` VARCHAR(256) COMMENT '权限描述',
     -- 细粒度资源权限字段
-    `role_id` VARCHAR(64) COMMENT '角色ID或用户ID（兼容双模式）',
+    `user_id` VARCHAR(64) COMMENT '用户ID（资源级权限被授权用户）',
     `resource_type` VARCHAR(32) COMMENT '资源类型: database, table, column, instance',
     `resource_id` VARCHAR(128) COMMENT '资源ID（数据库实例ID/表ID等）',
     `resource_name` VARCHAR(255) COMMENT '资源名称',
@@ -64,7 +64,7 @@ CREATE TABLE IF NOT EXISTS `sys_permission` (
     `expire_time` DATETIME COMMENT '权限过期时间（null=永不过期）',
     `create_time` DATETIME COMMENT '创建时间',
     PRIMARY KEY (`id`),
-    KEY `idx_role_id` (`role_id`),
+    KEY `idx_user_id` (`user_id`),
     KEY `idx_resource` (`resource_type`, `resource_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='权限表（功能权限+资源权限）';
 

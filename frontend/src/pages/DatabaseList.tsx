@@ -130,7 +130,7 @@ const DatabaseList: React.FC = () => {
       render: (text: string) => <strong>{text}</strong>
     },
     {
-      title: '数据库类垀',
+      title: '数据库类型',
       dataIndex: 'dbType',
       key: 'dbType',
       width: 120,
@@ -205,7 +205,7 @@ const DatabaseList: React.FC = () => {
           >
             编辑
           </Button>
-          <Popconfirm title="确认删除此数据库实例＀" onConfirm={() => handleDelete(record.id)}>
+          <Popconfirm title="确认删除此数据库实例吗？" onConfirm={() => handleDelete(record.id)}>
             <Button type="link" danger size="small" icon={<DeleteOutlined />}>
               删除
             </Button>
@@ -218,7 +218,7 @@ const DatabaseList: React.FC = () => {
   return (
     <div>
       <Card 
-        title="数据库实例管琀"
+        title="数据库实例管理"
         extra={
           <Button 
             type="primary" 
@@ -276,15 +276,15 @@ const DatabaseList: React.FC = () => {
           <Form.Item
             label="实例名称"
             name="name"
-            rules={[{ required: true, message: '请输入实例名秀' }]}
+            rules={[{ required: true, message: '请输入实例名称' }]}
           >
-            <Input placeholder="例如：用户中忀生产庀" />
+            <Input placeholder="例如：用户中心生产环境" />
           </Form.Item>
 
           <Form.Item
-            label="数据库类垀"
+            label="数据库类型"
             name="dbType"
-            rules={[{ required: true, message: '请选择数据库类垀' }]}
+            rules={[{ required: true, message: '请选择数据库类型' }]}
           >
             <Select placeholder="选择数据库类型">
               <Option value="mysql">MySQL</Option>
@@ -316,7 +316,7 @@ const DatabaseList: React.FC = () => {
               <Form.Item
                 label="端口"
                 name="port"
-                rules={[{ required: true, message: '请输入端叀' }]}
+                rules={[{ required: true, message: '请输入端口号' }]}
               >
                 <Input type="number" placeholder="3306" />
               </Form.Item>
@@ -345,7 +345,7 @@ const DatabaseList: React.FC = () => {
           </Row>
 
           <Form.Item label="默认数据库" name="databaseName">
-            <Input placeholder="可选，连接后自动获叀" />
+            <Input placeholder="可选，连接后自动获取" />
           </Form.Item>
         </Form>
       </Modal>

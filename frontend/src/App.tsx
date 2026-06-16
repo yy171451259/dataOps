@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useMemo } from 'react';
-import { Layout, Menu, theme, ConfigProvider, Avatar, Dropdown, message } from 'antd';
+import { Layout, Menu, theme, ConfigProvider, Avatar, Dropdown, Badge, message } from 'antd';
 import {
   DatabaseOutlined, FileSearchOutlined, AuditOutlined, CheckSquareOutlined,
   UserOutlined, SettingOutlined, SafetyOutlined, LogoutOutlined,
@@ -10,6 +10,7 @@ import {
 } from '@ant-design/icons';
 import { Routes, Route, useNavigate, useLocation, Navigate } from 'react-router-dom';
 import { useAuthStore } from './store/useAuthStore';
+import { ticketApi, permissionRequestApi } from './utils/api';
 import SqlEditor from './components/SqlEditor';
 import TicketList from './pages/TicketList';
 import DatabaseList from './pages/DatabaseList';
@@ -44,6 +45,25 @@ const ProtectedLayout: React.FC = () => {
   const location = useLocation();
   const { user, logout, hasPermission, menus } = useAuthStore();
   const { token: { colorBgContainer, borderRadiusLG } } = theme.useToken();
+  const [pendingCount, setPendingCount] = useState(0);
+
+  useEffect(() => {
+    if (!hasPermission('ticket:approve')) return;
+    const fetchPendingCount = async () => {
+      try {
+        const [ticketRes, permRes] = await Promise.all([
+          ticketApi.pending().catch(() => ({ data: { data: [] } })),
+          permissionRequestApi.pending().catch(() => ({ data: { data: [] } })),
+        ]);
+        const tCount = Array.isArray(ticketRes.data?.data) ? ticketRes.data.data.length : 0;
+        const pCount = Array.isArray(permRes.data?.data) ? permRes.data.data.length : 0;
+        setPendingCount(tCount + pCount);
+      } catch { /* ignore */ }
+    };
+    fetchPendingCount();
+    const timer = setInterval(fetchPendingCount, 30000);
+    return () => clearInterval(timer);
+  }, [hasPermission]);
 
   // 根据后端菜单数据结构转换为 Ant Design Menu items 格式
   const convertToMenuItems = (menuTree: any[]): any[] => {
@@ -126,10 +146,19 @@ const ProtectedLayout: React.FC = () => {
             <Dropdown menu={{ items: userMenuItems, onClick: ({ key }) => { if (key === 'logout') handleLogout(); } }} placement="topRight" trigger={['click']}>
               <div style={{
                 cursor: 'pointer', padding: '12px 16px',
-                display: 'flex', alignItems: 'center', gap: 8,
+                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
               }}>
-                <Avatar size={collapsed ? 30 : 28} icon={<UserOutlined />} />
-                {!collapsed && <span style={{ color: 'rgba(255,255,255,0.75)', fontSize: 13, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{user?.nickname || user?.username || '用户'}</span>}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <Avatar size={collapsed ? 30 : 28} icon={<UserOutlined />} />
+                  {!collapsed && <span style={{ color: 'rgba(255,255,255,0.75)', fontSize: 13, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{user?.nickname || user?.username || '用户'}</span>}
+                </div>
+                {!collapsed && pendingCount > 0 && hasPermission('ticket:approve') && (
+                  <div onClick={(e) => { e.stopPropagation(); navigate('/dashboard'); }} style={{ cursor: 'pointer', padding: '4px' }}>
+                    <Badge count={pendingCount} size="small" offset={[4, 0]}>
+                      <BellOutlined style={{ color: 'rgba(255,255,255,0.65)', fontSize: 18 }} />
+                    </Badge>
+                  </div>
+                )}
               </div>
             </Dropdown>
           </div>
