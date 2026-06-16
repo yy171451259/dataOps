@@ -431,35 +431,29 @@ const ObjectBrowser: React.FC<ObjectBrowserProps> = ({
 
           children = ALL_CATS.map(cat => {
             const meta = CAT_META[cat];
-            let itemCount = 0;
             let catChildren: DataNode[] = [];
 
             switch (cat) {
               case 'tables':
-                itemCount = schema.tables?.length || 0;
                 catChildren = buildItemNodes(schema.tables || [], <TableOutlined style={{ color: meta.color, fontSize: 11 }} />);
                 break;
               case 'views':
-                itemCount = schema.views?.length || 0;
                 catChildren = buildItemNodes(schema.views || [], <EyeOutlined style={{ color: meta.color, fontSize: 11 }} />);
                 break;
               case 'procedures':
-                itemCount = schema.procedures?.length || 0;
                 catChildren = buildNameNodes(schema.procedures || [], <CodeOutlined style={{ color: meta.color, fontSize: 11 }} />);
                 break;
               case 'functions':
-                itemCount = schema.functions?.length || 0;
                 catChildren = buildNameNodes(schema.functions || [], <CodeOutlined style={{ color: meta.color, fontSize: 11 }} />);
                 break;
               case 'triggers':
-                itemCount = schema.triggers?.length || 0;
                 catChildren = buildNameNodes(schema.triggers || [], <ThunderboltOutlined style={{ color: meta.color, fontSize: 11 }} />);
                 break;
               case 'events':
-                itemCount = schema.events?.length || 0;
                 catChildren = buildNameNodes(schema.events || [], <ClockCircleOutlined style={{ color: meta.color, fontSize: 11 }} />);
                 break;
             }
+            const count = catChildren.length;
 
             return {
               key: `${k}-${cat}`,
@@ -468,12 +462,12 @@ const ObjectBrowser: React.FC<ObjectBrowserProps> = ({
                   <span style={{ color: meta.color, fontSize: 12 }}>{meta.icon}</span>
                   <span style={{ fontSize: 12 }}>{meta.label}</span>
                   <Tag style={{ fontSize: 9, lineHeight: '14px', padding: '0 4px', borderRadius: 3 }}>
-                    {itemCount}
+                    {count}
                   </Tag>
                 </span>
               ),
-              isLeaf: itemCount === 0,
-              children: itemCount > 0 ? catChildren : undefined,
+              isLeaf: count === 0,
+              children: count > 0 ? catChildren : undefined,
             };
           }).filter(Boolean) as DataNode[];
         }
@@ -489,30 +483,8 @@ const ObjectBrowser: React.FC<ObjectBrowserProps> = ({
   const finalTreeData: DataNode[] = useMemo(() => injectChildren(treeData),
     [treeData, loadingKeys, cacheVersion, searchText]);
 
-  /** 搜索：有内容时自动展开所有节点；清空时保持展开状态不回收 */
-  useEffect(() => {
-    const s = searchText.trim().toLowerCase();
-    if (!s) {
-      // 清空搜索时保持当前展开状态，不回收
-      return;
-    }
-    // 有搜索时展开所有实例、数据库、分类节点
-    const keys: React.Key[] = [];
-    const walk = (nodes: DataNode[]) => {
-      for (const node of nodes) {
-        const k = String(node.key);
-        const children = (node as any).children as DataNode[] | undefined;
-        if (!children || children.length === 0) continue;
-        if (children.length === 1 && String(children[0].key).endsWith('-loading')) continue;
-        if (k.startsWith('inst-') || k.startsWith('schema-') || k.includes('-tables') || k.includes('-views') || k.includes('-procedures') || k.includes('-functions') || k.includes('-triggers') || k.includes('-events')) {
-          keys.push(k);
-        }
-        walk(children);
-      }
-    };
-    walk(finalTreeData);
-    if (keys.length > 0) setExpandedKeys(keys);
-  }, [searchText, finalTreeData]);
+  /** 搜索只过滤已展开节点的数据，不自动展开 */
+
 
   /** handle select */
 

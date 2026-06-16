@@ -1247,8 +1247,12 @@ const SqlEditor: React.FC<SqlEditorProps> = () => {
             minHeight: 32, userSelect: 'none', flexShrink: 0,
           }}>
             <div style={{ display: 'flex', alignItems: 'center', flex: 1, overflow: 'hidden', paddingLeft: 2 }}>
-              {sqlTabs.map((tab: any, idx: number) => (
-                <div key={tab.key}
+              {sqlTabs.map((tab: any, idx: number) => {
+                const inst = tab.databaseId ? databases.find((d: any) => d.id === tab.databaseId) : null;
+                const tip = tab.databaseId ? `${inst?.name || tab.databaseId} / ${tab.databaseName || '-'}` : 'SQL 编辑器';
+                return (
+                <Tooltip key={tab.key} title={tip} mouseEnterDelay={0.4}>
+                <div
                   onClick={() => setActiveTab(tab.key)}
                   onMouseDown={(e) => { if (e.button === 1) { e.preventDefault(); removeTab(tab.key); } }}
                   style={{
@@ -1274,12 +1278,10 @@ const SqlEditor: React.FC<SqlEditorProps> = () => {
                     />
                   )}
                 </div>
-              ))}
+                </Tooltip>
+                );
+              })}
             </div>
-            <Tooltip title="新建查询">
-              <Button type="text" size="small" icon={<PlusOutlined />} onClick={() => addTab()}
-                style={{ width: 32, height: 32, color: '#666', borderLeft: '1px solid #d5d5d5', borderRadius: 0 }} />
-            </Tooltip>
           </div>
           {/* SQL 编辑器 */}
           <div style={{ height: editorHeight, minHeight: MIN_EDITOR_HEIGHT, borderBottom: '1px solid #e8e8e8' }}>
@@ -1292,6 +1294,7 @@ const SqlEditor: React.FC<SqlEditorProps> = () => {
               onMount={handleEditorMount}
               theme="vs-light"
               options={{
+                lineNumbers: 'off',
                 minimap: { enabled: false },
                 fontSize: 13,
                 fontFamily: 'Consolas, Monaco, "Courier New", monospace',

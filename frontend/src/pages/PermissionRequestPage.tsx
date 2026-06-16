@@ -499,7 +499,7 @@ const PermissionRequestPage: React.FC = () => {
                 {/* 右侧：已选择的资源 */}
                 <div style={{ width: 350, display: 'flex', flexDirection: 'column' }}>
                   <div style={{ marginBottom: 8, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                    <span style={{ fontWeight: 500 }}>已选择的库/表</span>
+                    <span style={{ fontWeight: 500 }}>已选择的实例/Schema</span>
                     <Input
                       placeholder="搜索"
                       style={{ width: 120 }}
@@ -512,12 +512,6 @@ const PermissionRequestPage: React.FC = () => {
                       <Empty description="没有查询到符合条件的数据" image={Empty.PRESENTED_IMAGE_SIMPLE} />
                     ) : (
                       <div>
-                        {/* 实例级别汇总 */}
-                        <div style={{ marginBottom: 4 }}>
-                          <Checkbox checked={selectedResources.some(r => r.resourceType === 'instance')} disabled>
-                            <span style={{ color: '#52c41a' }}>实例信息</span>
-                          </Checkbox>
-                        </div>
                         {/* 已选资源列表 */}
                         {selectedResources.map(r => (
                           <div key={`${r.instanceId}-${r.databaseId}-${r.resourceType}`}
