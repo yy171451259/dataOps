@@ -117,15 +117,16 @@ public class SqlDialect {
     public static String listColumnsSql(String type, String schema, String tableName) {
         switch (normalizeType(type)) {
             case "oracle":
-                return "SELECT COLUMN_NAME, DATA_TYPE, NULLABLE FROM ALL_TAB_COLUMNS WHERE OWNER='"
+                return "SELECT COLUMN_NAME, DATA_TYPE, NULLABLE, DATA_DEFAULT FROM ALL_TAB_COLUMNS WHERE OWNER='"
                     + schema.toUpperCase() + "' AND TABLE_NAME='" + tableName.toUpperCase()
                     + "' ORDER BY COLUMN_ID";
             case "postgresql":
-                return "SELECT column_name, data_type, is_nullable FROM information_schema.columns "
+                return "SELECT column_name, data_type, is_nullable, column_default FROM information_schema.columns "
                     + "WHERE table_schema='" + schema + "' AND table_name='" + tableName
                     + "' ORDER BY ordinal_position";
             default:
-                return "SELECT COLUMN_NAME, DATA_TYPE, COLUMN_KEY, IS_NULLABLE FROM INFORMATION_SCHEMA.COLUMNS "
+                return "SELECT COLUMN_NAME, DATA_TYPE, COLUMN_KEY, IS_NULLABLE, COLUMN_DEFAULT, COLUMN_COMMENT "
+                    + "FROM INFORMATION_SCHEMA.COLUMNS "
                     + "WHERE TABLE_SCHEMA='" + schema + "' AND TABLE_NAME='" + tableName
                     + "' ORDER BY ORDINAL_POSITION";
         }
@@ -201,7 +202,7 @@ public class SqlDialect {
                 return "SELECT indexname, indexdef FROM pg_indexes "
                     + "WHERE schemaname='" + schema + "' AND tablename='" + tableName + "' ORDER BY indexname";
             default:
-                return "SELECT INDEX_NAME, COLUMN_NAME, NON_UNIQUE FROM INFORMATION_SCHEMA.STATISTICS "
+                return "SELECT INDEX_NAME, COLUMN_NAME, NON_UNIQUE, INDEX_TYPE FROM INFORMATION_SCHEMA.STATISTICS "
                     + "WHERE TABLE_SCHEMA='" + schema + "' AND TABLE_NAME='" + tableName
                     + "' ORDER BY INDEX_NAME, SEQ_IN_INDEX";
         }
@@ -224,6 +225,7 @@ public class SqlDialect {
                 idx.put("name", rs.getString("INDEX_NAME"));
                 idx.put("column", rs.getString("COLUMN_NAME"));
                 idx.put("unique", rs.getInt("NON_UNIQUE") == 0 ? "Y" : "N");
+                try { idx.put("type", rs.getString("INDEX_TYPE")); } catch (SQLException e) { idx.put("type", ""); }
                 break;
         }
         return idx;
@@ -368,8 +370,13 @@ public class SqlDialect {
         col.put("type", rs.getString("DATA_TYPE"));
         if ("oracle".equals(t)) {
             col.put("key", "");
+            try { col.put("default", rs.getString("DATA_DEFAULT")); } catch (SQLException e) { col.put("default", ""); }
         } else {
             try { col.put("key", rs.getString("COLUMN_KEY")); } catch (SQLException e) { col.put("key", ""); }
+            try { col.put("default", rs.getString("COLUMN_DEFAULT")); } catch (SQLException e) { col.put("default", ""); }
+        }
+        try { col.put("comment", rs.getString("COLUMN_COMMENT")); } catch (SQLException e) {
+            try { col.put("comment", rs.getString("REMARKS")); } catch (SQLException e2) { col.put("comment", ""); }
         }
         return col;
     }

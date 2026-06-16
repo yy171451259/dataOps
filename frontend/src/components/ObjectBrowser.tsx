@@ -557,12 +557,21 @@ const ObjectBrowser: React.FC<ObjectBrowserProps> = ({
 
   return (
     <div style={{
-      width: 260, height: '100%', display: 'flex', flexDirection: 'column',
-      borderRight: '1px solid #e8e8e8', background: '#fafafa',
-      flexShrink: 0,
+      height: '100%', width: '100%', display: 'flex', flexDirection: 'column',
+      background: '#fff',
     }}>
+      {/* 标题栏 - DBeaver 风格 */}
+      <div style={{
+        flexShrink: 0, padding: '6px 10px',
+        background: '#f5f5f5', borderBottom: '1px solid #e5e5e5',
+        fontSize: 12, fontWeight: 600, color: '#444',
+        display: 'flex', alignItems: 'center', gap: 6,
+      }}>
+        <DatabaseOutlined style={{ fontSize: 13, color: '#52c41a' }} />
+        <span>数据库导航器</span>
+      </div>
       {/* 搜索框，吸顶 */}
-      <div style={{ flexShrink: 0, padding: '8px 10px 6px', borderBottom: '1px solid #f0f0f0' }}>
+      <div style={{ flexShrink: 0, padding: '6px 10px', borderBottom: '1px solid #f0f0f0' }}>
         <Input
           size="small" allowClear value={searchText}
           onChange={e => setSearchText(e.target.value)}
@@ -596,12 +605,12 @@ const ObjectBrowser: React.FC<ObjectBrowserProps> = ({
         )}
       </div>
 
-      {/* 底部提示 �?固定 */}
+      {/* Bottom Tip */}
       <div style={{
-        flexShrink: 0, padding: '5px 10px', borderTop: '1px solid #e8e8e8',
-        fontSize: 11, color: '#bbb', textAlign: 'center', background: '#fff',
+        flexShrink: 0, padding: '4px 10px', borderTop: '1px solid #e8e8e8',
+        fontSize: 10, color: '#ccc', textAlign: 'center', background: '#fafafa',
       }}>
-        右键表→查看表结构、新建查询 | 右键库→新建查询 | 双击列名插入
+        Right-click table: view structure / new query | Dbl-click column: insert
       </div>
 
       {/* 右键菜单 */}

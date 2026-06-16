@@ -244,14 +244,28 @@ public class DatabaseInstanceServiceImpl
             conn = getConnection(db, databaseName);
 
             // 索引
-            List<Map<String, String>> indexes = new ArrayList<>();
+            Map<String, Map<String, Object>> mergedIndexes = new LinkedHashMap<>();
             try (Statement stmt = conn.createStatement();
                  ResultSet rs = stmt.executeQuery(SqlDialect.listIndexesSql(dbType, schema, tableName))) {
                 while (rs.next()) {
-                    indexes.add(SqlDialect.parseIndex(dbType, rs));
+                    Map<String, String> raw = SqlDialect.parseIndex(dbType, rs);
+                    String name = raw.get("name");
+                    if (name == null) continue;
+                    if (!mergedIndexes.containsKey(name)) {
+                        Map<String, Object> idx = new LinkedHashMap<>();
+                        idx.put("name", name);
+                        idx.put("unique", raw.get("unique"));
+                        idx.put("type", raw.getOrDefault("type", ""));
+                        idx.put("columns", new ArrayList<String>());
+                        mergedIndexes.put(name, idx);
+                    }
+                    @SuppressWarnings("unchecked")
+                    List<String> cols = (List<String>) mergedIndexes.get(name).get("columns");
+                    String col = raw.get("column");
+                    if (col != null) cols.add(col);
                 }
             } catch (Exception e) { /* 部分数据库不支持 */ }
-            result.put("indexes", indexes);
+            result.put("indexes", new ArrayList<>(mergedIndexes.values()));
 
             // 外键
             List<Map<String, Object>> foreignKeys = new ArrayList<>();

@@ -10,7 +10,7 @@ import {
 
   Drawer, Modal, Popconfirm, Divider, Empty, Space, Input, Rate,
 
-  Form, Alert, Radio, Row, Col,
+  Form, Alert, Radio, Row, Col, Spin,
 
 } from 'antd';
 
@@ -727,29 +727,29 @@ const SqlEditor: React.FC<SqlEditorProps> = () => {
 
       const startTime = Date.now();
 
-      const res = await instanceApi.executeQuery(activeTabData.databaseId, { sql: sqlToRun, maxRows: 1000 });
+      const res = await sqlApi.execute(activeTabData.databaseId, sqlToRun, activeTabData.databaseName, 0, 1000);
+
+      // 后端返回 code!=200 视为错误
+      if (res.data?.code && res.data.code !== 200) {
+        throw new Error(res.data.message || '执行失败');
+      }
 
       const executionTime = Date.now() - startTime;
 
-      const data = res.data.data;
+      const resultArr = res.data?.data || [];
 
-      const queryResult: QueryResult = {
-
-        columns: data?.columns || [],
-
-        data: data?.rows || [],
-
+      const queryResults: QueryResult[] = resultArr.map((result: any) => ({
+        columns: result.columns || [],
+        data: result.data || [],
+        affectRows: result.affectRows,
         success: true,
-
-        executionTime,
-
+        executionTime: result.executionTime || executionTime,
         executedSql: sqlToRun,
+      }));
 
-      };
+      setResults(prev => ({ ...prev, [activeTab]: [...(prev[activeTab] || []), ...queryResults] }));
 
-      setResults(prev => ({ ...prev, [activeTab]: [...(prev[activeTab] || []), queryResult] }));
-
-      const newIdx = (results[activeTab]?.length || 0);
+      const newIdx = (results[activeTab]?.length || 0) + queryResults.length - 1;
 
       setActiveResultIdx(newIdx);
 
@@ -760,9 +760,18 @@ const SqlEditor: React.FC<SqlEditorProps> = () => {
       addExecutionRecord({ sql: sqlToRun, databaseId: activeTabData.databaseId!, databaseName: activeTabData.databaseName, executionTime, success: true });
 
     } catch (err: any) {
-
-      message.error(err.response?.data?.message || err.message || '执行失败');
-
+      const errorMsg = err.response?.data?.message || err.message || '执行失败';
+      const errorResult: QueryResult = {
+        columns: [],
+        data: [],
+        success: false,
+        errorMessage: errorMsg,
+        executedSql: sqlToRun,
+      };
+      setResults(prev => ({ ...prev, [activeTab]: [...(prev[activeTab] || []), errorResult] }));
+      const newIdx = (results[activeTab]?.length || 0);
+      setActiveResultIdx(newIdx);
+      setActiveResultKey(String(newIdx));
     } finally { setLoading(false); }
 
   };
@@ -861,7 +870,33 @@ const SqlEditor: React.FC<SqlEditorProps> = () => {
 
   const [tableStructureVisible, setTableStructureVisible] = useState(false);
 
-  const [tableStructureInfo, setTableStructureInfo] = useState<{ tableName: string; columns: any[] } | null>(null);
+  const [tableStructureInfo, setTableStructureInfo] = useState<{ tableName: string; columns: any[]; indexes?: any[]; ddl?: string } | null>(null);
+
+  // 打开表结构查看器
+  const openTableStructure = async (databaseId: string, databaseName: string, tableName: string) => {
+    setTableStructureVisible(true);
+    setTableStructureInfo({ tableName, columns: [] });
+    try {
+      // columns from getBrowserSchema
+      const [schemaRes, detailRes] = await Promise.all([
+        instanceApi.getBrowserSchema(databaseId, databaseName).catch(() => null),
+        instanceApi.getTableDetail(databaseId, tableName, databaseName).catch(() => null),
+      ]);
+      // extract columns of the specific table from schema
+      const schema = schemaRes?.data?.data || {};
+      const allTables = schema.tables || [];
+      const tableInfo = allTables.find((t: any) => t.name === tableName);
+      const detail = detailRes?.data?.data || {};
+      setTableStructureInfo({
+        tableName,
+        columns: tableInfo?.columns || [],
+        indexes: detail.indexes || [],
+        ddl: detail.ddl || null,
+      });
+    } catch {
+      setTableStructureInfo({ tableName, columns: [] });
+    }
+  };
 
   const currentResults = results[activeTab] || [];
 
@@ -1182,75 +1217,125 @@ const SqlEditor: React.FC<SqlEditorProps> = () => {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', width: '100%', background: '#f5f5f5', overflow: 'hidden' }}>
-      {/* SQL Tab 页签 */}
-      <div style={{ display: 'flex', alignItems: 'center', background: '#e8e8e8', borderBottom: '1px solid #d9d9d9', paddingLeft: 4, minHeight: 30 }}>
-        {sqlTabs.map((tab: any) => (
-          <div key={tab.key} onClick={() => setActiveTab(tab.key)} style={{
-            display: 'flex', alignItems: 'center', padding: '4px 12px', cursor: 'pointer',
-            background: tab.key === activeTab ? '#fff' : 'transparent',
-            borderLeft: '1px solid transparent', borderRight: '1px solid transparent',
-            borderTop: tab.key === activeTab ? '2px solid #1677ff' : '2px solid transparent',
-            fontSize: 12, marginRight: 2, marginTop: 2,
-            borderBottom: tab.key === activeTab ? '1px solid #fff' : '1px solid #d9d9d9',
-          }}>
-            <DatabaseOutlined style={{ fontSize: 11, marginRight: 4, color: '#1677ff' }} />
-            <span style={{ maxWidth: 120, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-              {tab.databaseName || tab.databaseId || 'SQL'}
-            </span>
-            {sqlTabs.length > 1 && (
-              <CloseOutlined
-                style={{ fontSize: 10, marginLeft: 6, color: '#999', opacity: 0.6 }}
-                onClick={(e) => { e.stopPropagation(); removeTab(tab.key); }}
-              />
-            )}
-          </div>
-        ))}
-        <Button type="text" size="small" icon={<PlusOutlined />} onClick={() => addTab()} style={{ marginLeft: 4, fontSize: 11, padding: '2px 8px' }}>新建</Button>
-      </div>
 
       <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
-        {/* 对象浏览器侧边栏 */}
-        <ObjectBrowser
-          databaseId={activeTabData?.databaseId}
-          databaseName={activeTabData?.databaseName}
-          schemas={schemaNames}
-          loadingSchemas={loadingSchemaNames}
-        />
+        {/* 对象浏览器侧边栏 - DBeaver 风格 Database Navigator */}
+        <div style={{ width: 260, borderRight: '1px solid #d5d5d5', display: 'flex', flexDirection: 'column', background: '#fff', overflow: 'hidden' }}>
+          <div style={{ flex: 1, overflow: 'auto' }}>
+            <ObjectBrowser
+              databaseId={activeTabData?.databaseId}
+              databaseName={activeTabData?.databaseName}
+              schemas={schemaNames}
+              loadingSchemas={loadingSchemaNames}
+              onNewTab={(databaseId, databaseName, tableName) => {
+                // 同名编辑器存在则复用，追加SQL
+                const existing = sqlTabs.find(t => t.databaseName === databaseName);
+                if (existing) {
+                  const appendSql = tableName ? `\nSELECT * FROM \`${tableName}\` LIMIT 100;` : '';
+                  updateTab(existing.key, { sql: (existing.sql || '') + appendSql });
+                  setActiveTab(existing.key);
+                  return;
+                }
+                const newKey = `tab-${Date.now()}`;
+                const title = tableName || databaseName || 'Query';
+                addTab({ key: newKey, title, sql: tableName ? `SELECT * FROM \`${tableName}\` LIMIT 100;` : '', databaseId, databaseName });
+              }}
+              onViewTableStructure={(databaseId, databaseName, tableName) => {
+                openTableStructure(databaseId, databaseName, tableName);
+              }}
+              onInsertToEditor={(text) => {
+                updateTab(activeTab, { ...activeTabData, sql: (activeTabData?.sql || '') + text });
+              }}
+            />
+          </div>
+        </div>
+
+        {/* 编辑器工具栏 - DBeaver 风格，编辑器左侧竖排 */}
+        <div style={{
+          width: 40, borderRight: '1px solid #d5d5d5', background: '#f9f9f9',
+          display: 'flex', flexDirection: 'column', alignItems: 'center',
+          padding: '8px 0', gap: 4, flexShrink: 0,
+        }}>
+          <Tooltip title="执行 (Ctrl+Enter)" placement="right">
+            <Button type="text" size="small"
+              icon={<PlayCircleOutlined style={{ color: '#52c41a', fontSize: 16 }} />}
+              loading={loading} onClick={handleExecute} style={{ padding: '4px 8px' }} />
+          </Tooltip>
+          <Tooltip title="执行计划" placement="right">
+            <Button type="text" size="small" icon={<ExperimentOutlined />}
+              onClick={handleExplain} style={{ padding: '4px 8px' }} />
+          </Tooltip>
+          <Tooltip title="格式化" placement="right">
+            <Button type="text" size="small" icon={<FormatPainterOutlined />}
+              onClick={() => {
+                const editor = editorRef.current;
+                if (editor) {
+                  const sql = activeTabData?.sql || '';
+                  if (sql.trim()) {
+                    const formatted = sql
+                      .replace(/\s+/g, ' ')
+                      .replace(/\b(select|from|where|and|or|join|left|right|inner|outer|on|group|by|order|having|limit|offset|insert|into|values|update|set|delete|create|alter|table|drop|index)\b/gi, '\n$1')
+                      .replace(/^\n/, '')
+                      .replace(/\n/g, '\n  ')
+                      .replace(/\b(select|from|where|and|or|join|on|group|order|having|insert|update|delete|create|alter|drop)\b/gi, (m: string) => m.toUpperCase());
+                    updateTab(activeTab, { ...activeTabData, sql: formatted });
+                  }
+                }
+              }} style={{ padding: '4px 8px' }} />
+          </Tooltip>
+          <Divider style={{ margin: '4px 0', width: 20, minWidth: 20 }} />
+          <Tooltip title="复制" placement="right">
+            <Button type="text" size="small" icon={<CopyOutlined />}
+              onClick={() => {
+                navigator.clipboard.writeText(activeTabData?.sql || '');
+                message.success('OK');
+              }} style={{ padding: '4px 8px' }} />
+          </Tooltip>
+        </div>
 
         {/* 主工作区 */}
         <div style={{ display: 'flex', flexDirection: 'column', flex: 1, background: '#fff', overflow: 'hidden' }}>
-          {/* 工具栏 */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '6px 10px', borderBottom: '1px solid #e8e8e8', background: '#fafafa' }}>
-            <Select
-              value={activeTabData?.databaseId}
-              style={{ width: 180 }}
-              size="small"
-              onChange={(val: string) => {
-                const db = databases.find((d: any) => d.id === val);
-                updateTab(activeTab, { databaseId: val, databaseName: db?.name });
-                setActiveResultKey('my-sql');
-                setResults(prev => ({ ...prev, [activeTab]: [] }));
-              }}
-              options={databases.map((db: any) => ({ label: db.name, value: db.id }))}
-              placeholder="选择数据库实例"
-            />
-            {schemaNames.length > 0 && activeTabData?.databaseName && (
-              <Select
-                value={activeTabData?.databaseName}
-                style={{ width: 140 }}
-                size="small"
-                onChange={(val: string) => updateTab(activeTab, { databaseId: activeTabData.databaseId, databaseName: val })}
-                options={[{ label: activeTabData?.databaseName, value: activeTabData?.databaseName }, ...schemaNames.filter(n => n !== activeTabData?.databaseName).map((n: string) => ({ label: n, value: n }))]}
-                placeholder="选择 Schema"
-              />
-            )}
-            <Divider type="vertical" style={{ height: 16 }} />
-            <Button type="primary" size="small" icon={<PlayCircleOutlined />} loading={loading} onClick={handleExecute}>执行 (Ctrl+Enter)</Button>
-            <Button size="small" icon={<ExperimentOutlined />} onClick={handleExplain}>执行计划</Button>
-            <Button size="small" icon={<SafetyOutlined />} onClick={handleAudit}>SQL 审核</Button>
-            <Button size="small" icon={<CopyOutlined />} onClick={handleCopySql}>复制</Button>
+          {/* 编辑器标签栏 */}
+          <div style={{
+            display: 'flex', alignItems: 'center',
+            background: '#ececec', borderBottom: '1px solid #d5d5d5',
+            minHeight: 32, userSelect: 'none', flexShrink: 0,
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', flex: 1, overflow: 'hidden', paddingLeft: 2 }}>
+              {sqlTabs.map((tab: any, idx: number) => (
+                <div key={tab.key}
+                  onClick={() => setActiveTab(tab.key)}
+                  onMouseDown={(e) => { if (e.button === 1) { e.preventDefault(); removeTab(tab.key); } }}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 4,
+                    padding: '5px 12px 3px', cursor: 'pointer', whiteSpace: 'nowrap',
+                    background: tab.key === activeTab ? '#fff' : '#e8e8e8',
+                    color: tab.key === activeTab ? '#333' : '#888',
+                    borderTop: tab.key === activeTab ? '3px solid #52c41a' : '3px solid transparent',
+                    borderRadius: tab.key === activeTab ? '3px 3px 0 0' : '0',
+                    marginRight: 1, marginTop: tab.key === activeTab ? 0 : 3,
+                    fontSize: 12, fontWeight: tab.key === activeTab ? 500 : 400,
+                    transition: 'all 0.15s',
+                  }}
+                >
+                  <FileTextOutlined style={{ fontSize: 12, color: tab.key === activeTab ? '#52c41a' : '#aaa' }} />
+                  <span style={{ maxWidth: 130, overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                    {tab.databaseName || `SQL ${idx + 1}`}
+                  </span>
+                  {sqlTabs.length > 1 && (
+                    <CloseOutlined
+                      style={{ fontSize: 10, marginLeft: 2, color: '#aaa', padding: 1 }}
+                      onClick={(e) => { e.stopPropagation(); removeTab(tab.key); }}
+                    />
+                  )}
+                </div>
+              ))}
+            </div>
+            <Tooltip title="新建查询">
+              <Button type="text" size="small" icon={<PlusOutlined />} onClick={() => addTab()}
+                style={{ width: 32, height: 32, color: '#666', borderLeft: '1px solid #d5d5d5', borderRadius: 0 }} />
+            </Tooltip>
           </div>
-
           {/* SQL 编辑器 */}
           <div style={{ height: editorHeight, minHeight: MIN_EDITOR_HEIGHT, borderBottom: '1px solid #e8e8e8' }}>
             <Editor
@@ -1260,7 +1345,7 @@ const SqlEditor: React.FC<SqlEditorProps> = () => {
               value={activeTabData?.sql || ''}
               onChange={(value: string) => updateTab(activeTab, { ...activeTabData, sql: value })}
               onMount={handleEditorMount}
-              theme="vs-dark"
+              theme="vs-light"
               options={{
                 minimap: { enabled: false },
                 fontSize: 13,
@@ -1288,31 +1373,30 @@ const SqlEditor: React.FC<SqlEditorProps> = () => {
           <div ref={resultContainerRef} onScroll={handleResultScroll} style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
             {/* 结果页签头 */}
             <div style={{ display: 'flex', alignItems: 'center', borderBottom: '1px solid #e8e8e8', background: '#f5f5f5', minHeight: 28 }}>
-              <div onClick={() => { setActiveResultKey('my-sql'); setActiveResultIdx(0); }}
-                style={{
-                  padding: '4px 12px', fontSize: 12, cursor: 'pointer', fontWeight: 500,
-                  borderBottom: activeResultKey === 'my-sql' ? '2px solid #1677ff' : '2px solid transparent',
-                  color: activeResultKey === 'my-sql' ? '#1677ff' : '#595959',
-                  background: activeResultKey === 'my-sql' ? '#fff' : 'transparent',
-                  whiteSpace: 'nowrap', borderRight: '1px solid #e8e8e8',
-                  userSelect: 'none', lineHeight: '22px',
+              <Tabs type="editable-card" hideAdd size="small"
+                activeKey={activeResultKey}
+                onChange={(key) => {
+                  setActiveResultKey(key);
+                  setActiveResultIdx(key === 'my-sql' ? 0 : Number(key));
                 }}
-              >
-                我的SQL {savedQueries.length > 0 && <Tag color="blue" style={{ marginLeft: 4, fontSize: 10, lineHeight: '14px' }}>{savedQueries.length}</Tag>}
-              </div>
-              {currentResults.length > 0 && (
-                <Tabs type="editable-card" hideAdd size="small"
-                  activeKey={activeResultKey === 'my-sql' ? undefined : activeResultKey}
-                  onChange={(key) => { setActiveResultKey(key); setActiveResultIdx(Number(key)); }}
-                  onEdit={(targetKey) => {
-                    const idx = Number(targetKey);
-                    const newResults = currentResults.filter((_, i) => i !== idx);
-                    setResults(prev => ({ ...prev, [activeTab]: newResults }));
-                    if (newResults.length === 0) { setActiveResultKey('my-sql'); setActiveResultIdx(0); }
-                    else if (activeResultIdx >= newResults.length) { const ni = Math.max(0, newResults.length - 1); setActiveResultIdx(ni); setActiveResultKey(String(ni)); }
-                    else if (activeResultIdx === idx) { const ni = Math.min(idx, newResults.length - 1); setActiveResultIdx(ni); setActiveResultKey(String(ni)); }
-                  }}
-                  items={currentResults.map((r, i) => ({
+                onEdit={(targetKey) => {
+                  if (targetKey === 'my-sql') return;
+                  const idx = Number(targetKey);
+                  const newResults = currentResults.filter((_, i) => i !== idx);
+                  setResults(prev => ({ ...prev, [activeTab]: newResults }));
+                  if (newResults.length === 0) { setActiveResultKey('my-sql'); setActiveResultIdx(0); }
+                  else if (String(activeResultIdx) === targetKey) { const ni = Math.min(idx, newResults.length - 1); setActiveResultIdx(ni); setActiveResultKey(String(ni)); }
+                }}
+                items={[
+                  {
+                    key: 'my-sql',
+                    label: <span style={{ fontSize: 11 }}>
+                      我的SQL {savedQueries.length > 0 && <Tag color="blue" style={{ marginLeft: 4, fontSize: 10, lineHeight: '14px' }}>{savedQueries.length}</Tag>}
+                    </span>,
+                    closable: false,
+                    children: null,
+                  },
+                  ...currentResults.map((r, i) => ({
                     key: String(i),
                     label: <span style={{ fontSize: 11 }}>
                       {r._dataChangeBlocked ? (
@@ -1322,11 +1406,12 @@ const SqlEditor: React.FC<SqlEditorProps> = () => {
                       )}
                     </span>,
                     closable: true,
-                  }))}
+                    children: null,
+                  })),
+                ]}
                   tabBarStyle={{ margin: 0, minHeight: 28 }}
                   style={{ flex: 1, overflow: 'hidden' }}
                 />
-              )}
               {currentResults.length > 0 && (
                 <Button size="small" type="link" danger style={{ marginRight: 4, flexShrink: 0 }} onClick={() => {
                   setResults(prev => ({ ...prev, [activeTab]: [] })); setActiveResultIdx(0); setActiveResultKey('my-sql');
@@ -1380,7 +1465,7 @@ const SqlEditor: React.FC<SqlEditorProps> = () => {
 
                   <pre style={{
 
-                    margin: 0, padding: '10px 12px', background: '#1e1e1e', color: '#d4d4d4',
+                    margin: 0, padding: '10px 12px', background: '#fafafa', color: '#333',
 
                     borderRadius: 6, fontSize: 12, fontFamily: 'Consolas, Monaco, monospace',
 
@@ -1643,7 +1728,9 @@ const SqlEditor: React.FC<SqlEditorProps> = () => {
             ) : currentResult ? (
 
               <div style={{ padding: 16 }}>
-
+                {currentResult.errorMessage && (
+                  <Alert type="error" showIcon message="SQL 执行错误" description={currentResult.errorMessage} style={{ marginBottom: 12 }} />
+                )}
                 <ExecutionStats result={currentResult} />
 
               </div>
@@ -1866,19 +1953,17 @@ const SqlEditor: React.FC<SqlEditorProps> = () => {
 
                 },
 
-                { title: '非空', key: 'notNull', width: 55,
-
-                  render: (_: any, rec: any) => rec.key === 'PRI' ? <Tag color="red" style={{ fontSize: 10 }}>PK</Tag> : null,
-
-                },
-
                 { title: '键', dataIndex: 'key', key: 'key', width: 50,
 
-                  render: (v: string) => v && <span style={{ color: '#722ed1', fontSize: 11 }}>{v}</span>,
+                  render: (v: string) => v && <Tag color={v === 'PRI' ? 'red' : 'purple'} style={{ fontSize: 10 }}>{v}</Tag>,
 
                 },
 
-                { title: '默认值', dataIndex: 'default', key: 'default', width: 80, ellipsis: true },
+                { title: '默认值', dataIndex: 'default', key: 'default', width: 80, ellipsis: true,
+
+                  render: (v: string) => v ? <span style={{ color: '#999', fontSize: 11, fontFamily: 'monospace' }}>{v}</span> : '-',
+
+                },
 
                 { title: '注释', dataIndex: 'comment', key: 'comment',
 
@@ -1894,9 +1979,33 @@ const SqlEditor: React.FC<SqlEditorProps> = () => {
 
             />
 
+            {tableStructureInfo.indexes && tableStructureInfo.indexes.length > 0 && (
+              <>
+                <Divider orientation="left" plain style={{ fontSize: 13 }}>Indexes ({tableStructureInfo.indexes.length})</Divider>
+                <Table
+                  dataSource={tableStructureInfo.indexes.map((ix: any, i: number) => ({ ...ix, _key: i }))}
+                  rowKey="_key" size="small" bordered pagination={false}
+                  columns={[
+                    { title: 'Name', dataIndex: 'name', key: 'name', width: 180 },
+                    { title: 'Columns', dataIndex: 'columns', key: 'columns', render: (v: any) => Array.isArray(v) ? v.join(', ') : v },
+                    { title: 'Unique', dataIndex: 'unique', key: 'unique', width: 60, render: (v: string) => v === 'Y' ? <Tag color="orange" style={{ fontSize: 10 }}>UNIQUE</Tag> : null },
+                    { title: 'Type', dataIndex: 'type', key: 'type', width: 80 },
+                  ]}
+                />
+              </>
+            )}
+            {tableStructureInfo.ddl && (
+              <>
+                <Divider orientation="left" plain style={{ fontSize: 13 }}>DDL</Divider>
+                <pre style={{ background: '#f5f5f5', padding: 12, borderRadius: 4, fontSize: 12, fontFamily: 'Consolas, monospace', whiteSpace: 'pre-wrap', maxHeight: 300, overflow: 'auto' }}>
+                  {tableStructureInfo.ddl}
+                </pre>
+              </>
+            )}
+
           </>
 
-        ) : null}
+        ) : <Spin tip="Loading..." style={{ display: 'block', textAlign: 'center', paddingTop: 80 }} />}
 
       </Drawer>
 
@@ -2012,7 +2121,7 @@ const SqlEditor: React.FC<SqlEditorProps> = () => {
 
             <pre style={{
 
-              margin: 0, padding: '10px 12px', background: '#1e1e1e', color: '#d4d4d4',
+              margin: 0, padding: '10px 12px', background: '#fafafa', color: '#333',
 
               borderRadius: 6, fontSize: 12, fontFamily: 'Consolas, Monaco, monospace',
 

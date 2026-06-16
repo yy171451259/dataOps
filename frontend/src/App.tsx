@@ -45,7 +45,7 @@ const ProtectedLayout: React.FC = () => {
   const { user, logout, hasPermission, menus } = useAuthStore();
   const { token: { colorBgContainer, borderRadiusLG } } = theme.useToken();
 
-  // ����˲˵������ݽṹת��Ϊ Ant Design Menu items ��ʽ
+  // 根据后端菜单数据结构转换为 Ant Design Menu items 格式
   const convertToMenuItems = (menuTree: any[]): any[] => {
     if (!menuTree || !Array.isArray(menuTree)) return [];
     return menuTree
@@ -62,20 +62,20 @@ const ProtectedLayout: React.FC = () => {
     if (menus && menus.length > 0) {
       return convertToMenuItems(menus);
     }
-    // ���ף�����˵����ݻ�δ���أ����ؿ�����
+    // 默认，如果菜单数据还未加载，返回空数组
     return [];
   }, [menus]);
 
   const handleLogout = () => {
     logout();
-    message.success('���˳���¼');
+    message.success('已退出登录');
     navigate('/login');
   };
 
   const userMenuItems = [
     { key: 'profile', label: `${user?.nickname || user?.username}`, icon: <UserOutlined />, disabled: true },
     { key: 'divider', type: 'divider' as const },
-    { key: 'logout', label: '�˳���¼', icon: <LogoutOutlined />, danger: true },
+    { key: 'logout', label: '退出登录', icon: <LogoutOutlined />, danger: true },
   ];
 
   return (
@@ -121,7 +121,7 @@ const ProtectedLayout: React.FC = () => {
               items={visibleMenuItems} onClick={({ key }) => navigate(key)}
             />
           </div>
-          {/* �û���Ϣ - �̶��ڲ������ײ� */}
+          {/* 用户信息 - 固定在侧边栏底部 */}
           <div style={{ flexShrink: 0, borderTop: '1px solid rgba(255,255,255,0.1)' }}>
             <Dropdown menu={{ items: userMenuItems, onClick: ({ key }) => { if (key === 'logout') handleLogout(); } }} placement="topRight" trigger={['click']}>
               <div style={{
@@ -129,7 +129,7 @@ const ProtectedLayout: React.FC = () => {
                 display: 'flex', alignItems: 'center', gap: 8,
               }}>
                 <Avatar size={collapsed ? 30 : 28} icon={<UserOutlined />} />
-                {!collapsed && <span style={{ color: 'rgba(255,255,255,0.75)', fontSize: 13, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{user?.nickname || user?.username || '�û�'}</span>}
+                {!collapsed && <span style={{ color: 'rgba(255,255,255,0.75)', fontSize: 13, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{user?.nickname || user?.username || '用户'}</span>}
               </div>
             </Dropdown>
           </div>

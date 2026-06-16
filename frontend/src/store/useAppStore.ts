@@ -80,10 +80,13 @@ export const useAppStore = create<AppState>()(
 
       setActiveTab: (tab) => set({ activeTab: tab }),
 
-      addTab: (tab) => set((state) => ({
-        sqlTabs: [...state.sqlTabs, tab],
-        activeTab: tab.key,
-      })),
+      addTab: (tab) => {
+        const newTab = tab || { key: `tab-${Date.now()}`, title: `SQL ${get().sqlTabs.length + 1}`, sql: '' };
+        return set((state) => ({
+          sqlTabs: [...state.sqlTabs, newTab],
+          activeTab: newTab.key,
+        }));
+      },
 
       removeTab: (key) => set((state) => {
         const newTabs = state.sqlTabs.filter((t) => t.key !== key);
