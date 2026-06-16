@@ -220,10 +220,13 @@ const BottomPanel: React.FC<BottomPanelProps> = ({ visible, activeTabData, onUse
 
         message.success('OK');
 
+  };
 
+};
 
-  //
-
+const ExecutionStats: React.FC<{ result: any }> = ({ result }) => {
+  const isDataSet = result?.data?.length > 0;
+  const statsRows: { name: string; value: any }[] = [];
 
   if (isDataSet) {
 
