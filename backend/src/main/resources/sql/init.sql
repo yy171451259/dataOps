@@ -263,7 +263,8 @@ CREATE TABLE IF NOT EXISTS `data_quality_result` (
 
 CREATE TABLE IF NOT EXISTS `metadata_table` (
     `id` VARCHAR(64) NOT NULL COMMENT '主键ID',
-    `database_id` VARCHAR(64) COMMENT '数据库ID',
+    `instance_id` VARCHAR(64) COMMENT '实例ID',
+    `schema_name` VARCHAR(128) COMMENT 'Schema名',
     `table_name` VARCHAR(256) NOT NULL COMMENT '表名',
     `table_comment` VARCHAR(1024) COMMENT '表注释',
     `table_type` VARCHAR(64) COMMENT '表类型: table,view',
@@ -275,12 +276,13 @@ CREATE TABLE IF NOT EXISTS `metadata_table` (
     `update_time` DATETIME COMMENT '更新时间',
     `deleted` TINYINT DEFAULT 0 COMMENT '删除标记',
     PRIMARY KEY (`id`),
-    UNIQUE KEY `uk_db_table` (`database_id`, `table_name`)
+    UNIQUE KEY `uk_instance_schema_table` (`instance_id`, `schema_name`, `table_name`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='元数据表信息';
 
 CREATE TABLE IF NOT EXISTS `metadata_column` (
     `id` VARCHAR(64) NOT NULL COMMENT '主键ID',
     `table_id` VARCHAR(64) NOT NULL COMMENT '表ID',
+    `instance_id` VARCHAR(64) COMMENT '实例ID',
     `column_name` VARCHAR(256) NOT NULL COMMENT '列名',
     `column_comment` VARCHAR(1024) COMMENT '列注释',
     `data_type` VARCHAR(128) COMMENT '数据类型',

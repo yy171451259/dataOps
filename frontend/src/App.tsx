@@ -18,6 +18,7 @@ import DatabaseList from './pages/DatabaseList';
 import AuditList from './pages/AuditList';
 import LoginPage from './pages/LoginPage';
 import DashboardPage from './pages/DashboardPage';
+import DatabaseMonitorPage from './pages/DatabaseMonitorPage';
 
 import MetadataPage from './pages/MetadataPage';
 import DataMaskingPage from './pages/DataMaskingPage';
@@ -41,6 +42,7 @@ const pageComponents: Record<string, React.FC> = {
   '/dashboard': DashboardPage,
   '/sql': SqlEditor,
   '/databases': DatabaseList,
+  '/monitor': DatabaseMonitorPage,
   '/pipeline': PipelinePage,
   '/metadata': MetadataPage,
   '/tickets': TicketList,
@@ -62,6 +64,7 @@ const pageLabels: Record<string, string> = {
   '/dashboard': '数据看板',
   '/sql': 'SQL查询',
   '/databases': '数据源管理',
+  '/monitor': '性能监控',
   '/pipeline': '数据管道',
   '/metadata': '元数据管理',
   '/tickets': '数据变更工单',

@@ -247,6 +247,9 @@ public class DatabaseMigration implements CommandLineRunner {
                 }
             }
 
+            // ============ 元数据表字段统一: database_id → instance_id ============
+            migrateMetadataColumns(conn);
+
             // ============ V6: DDL项目工单表 ============
             createTableIfNotExists(conn, "ddl_project",
                 "CREATE TABLE ddl_project (" +
@@ -297,6 +300,35 @@ public class DatabaseMigration implements CommandLineRunner {
 
         } catch (Exception e) {
             log.warn("DatabaseMigration skipped (column may already exist or DB not ready): {}", e.getMessage());
+        }
+    }
+
+    /**
+     * 元数据表字段统一: database_id → instance_id，并补齐 schema_name
+     */
+    private void migrateMetadataColumns(Connection conn) {
+        try {
+            // metadata_table: 重命名 database_id → instance_id
+            if (columnExists(conn, "metadata_table", "database_id") && !columnExists(conn, "metadata_table", "instance_id")) {
+                try (Statement stmt = conn.createStatement()) {
+                    stmt.execute("ALTER TABLE `metadata_table` CHANGE COLUMN `database_id` `instance_id` VARCHAR(64) COMMENT '实例ID'");
+                    log.info("Migration: Renamed metadata_table.database_id -> instance_id");
+                }
+            }
+            // metadata_table: 添加 schema_name
+            addColumnIfNotExists(conn, "metadata_table", "schema_name", "VARCHAR(128) COMMENT 'Schema名' AFTER `instance_id`");
+
+            // metadata_column: 重命名 database_id → instance_id（如果有）
+            if (columnExists(conn, "metadata_column", "database_id") && !columnExists(conn, "metadata_column", "instance_id")) {
+                try (Statement stmt = conn.createStatement()) {
+                    stmt.execute("ALTER TABLE `metadata_column` CHANGE COLUMN `database_id` `instance_id` VARCHAR(64) COMMENT '实例ID'");
+                    log.info("Migration: Renamed metadata_column.database_id -> instance_id");
+                }
+            }
+            // metadata_column: 补充 instance_id（不存在且无法重命名时新增）
+            addColumnIfNotExists(conn, "metadata_column", "instance_id", "VARCHAR(64) COMMENT '实例ID' AFTER `table_id`");
+        } catch (Exception e) {
+            log.warn("Metadata column migration skipped: {}", e.getMessage());
         }
     }
 

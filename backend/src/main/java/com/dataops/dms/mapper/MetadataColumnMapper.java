@@ -12,6 +12,6 @@ public interface MetadataColumnMapper extends BaseMapper<MetadataColumn> {
     /**
      * 物理删除指定实例的字段元数据（绕过逻辑删除）
      */
-    @Delete("DELETE FROM metadata_column WHERE database_id = #{databaseId}")
+    @Delete("DELETE FROM metadata_column WHERE instance_id = #{instanceId}")
     int physicalDeleteByInstanceId(@Param("instanceId") String instanceId);
 }

@@ -1,5 +1,5 @@
 import React from 'react';
-import { Tag, Badge, Timeline, Row, Col, Table } from 'antd';
+import { Tag, Badge, Timeline, Row, Col } from 'antd';
 import { CheckCircleFilled, CloseCircleFilled } from '@ant-design/icons';
 import dayjs from 'dayjs';
 
@@ -188,43 +188,45 @@ const RequestDetail: React.FC<{ request: PermissionRequest }> = ({ request }) =>
                 <div style={sectionHeader}><span>基本信息</span></div>
                 <div style={{ padding: 12, fontSize: 12, lineHeight: 1.9 }}>
                   <Row>
+                    <Col span={6} style={{ color: '#666' }}>工单编号</Col>
+                    <Col span={18} style={{ color: '#222', fontWeight: 500 }}>{request.id}</Col>
+                  </Row>
+                  <Row>
+                    <Col span={6} style={{ color: '#666' }}>申请人</Col>
+                    <Col span={18} style={{ color: '#222' }}>{request.applicantName || request.applicantId}</Col>
+                  </Row>
+                  <Row>
+                    <Col span={6} style={{ color: '#666' }}>资源类型</Col>
+                    <Col span={18} style={{ color: '#222' }}><Tag>{typeText}</Tag></Col>
+                  </Row>
+                  <Row>
+                    <Col span={6} style={{ color: '#666' }}>资源名称</Col>
+                    <Col span={18} style={{ color: '#222' }}>{resourceText}</Col>
+                  </Row>
+                  <Row>
+                    <Col span={6} style={{ color: '#666' }}>操作类型</Col>
+                    <Col span={18} style={{ color: '#222' }}>{permText || '-'}</Col>
+                  </Row>
+                  {info?.environment && (
+                    <Row>
+                      <Col span={6} style={{ color: '#666' }}>环境</Col>
+                      <Col span={18} style={{ color: '#222' }}><Tag color="orange">{info.environment}</Tag></Col>
+                    </Row>
+                  )}
+                  <Row>
+                    <Col span={6} style={{ color: '#666' }}>申请原因</Col>
+                    <Col span={18} style={{ color: '#222' }}>{plainText || '-'}</Col>
+                  </Row>
+                  <Row>
                     <Col span={6} style={{ color: '#666' }}>提交时间</Col>
                     <Col span={18} style={{ color: '#222' }}>
                       {createTime ? dayjs(createTime).format('YYYY-MM-DD HH:mm:ss') : '-'}
                     </Col>
                   </Row>
                   <Row>
-                    <Col span={6} style={{ color: '#666' }}>基本信息</Col>
-                    <Col span={18} style={{ color: '#222' }}>
-                      {request.applicantName || request.applicantId} 申请 {resourceText} 的 {permText || '权限'}
-                    </Col>
+                    <Col span={6} style={{ color: '#666' }}>审批人</Col>
+                    <Col span={18} style={{ color: '#222' }}>{request.approverName || request.approverId || '-'}</Col>
                   </Row>
-                  <Row>
-                    <Col span={6} style={{ color: '#666' }}>背景描述</Col>
-                    <Col span={18} style={{ color: '#222' }}>{plainText || '-'}</Col>
-                  </Row>
-
-                  <div style={{ marginTop: 6 }}>
-                    <div style={{ color: '#666', marginBottom: 4 }}>权限对象：{typeText}，共 1 个</div>
-                    <Table
-                      size="small"
-                      pagination={false}
-                      dataSource={[{
-                        key: request.id,
-                        instance: info?.instanceName || request.resourceName || '-',
-                        environment: info?.environment || '-',
-                        dba: request.approverName || '-'
-                      }]}
-                      columns={[
-                        { title: '序号', dataIndex: 'index', width: 60, render: (_v, _r, i) => i + 1 },
-                        { title: '实例地址 / 资源', dataIndex: 'instance' },
-                        { title: '环境', dataIndex: 'environment', width: 100, render: v => v && v !== '-' ? (
-                          <Tag color="orange">{v}</Tag>
-                        ) : '-' },
-                        { title: 'DBA', dataIndex: 'dba', width: 160 },
-                      ]}
-                    />
-                  </div>
                 </div>
               </div>
             )

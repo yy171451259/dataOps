@@ -264,14 +264,29 @@ const PermissionRequestPage: React.FC = () => {
       render: (id: string) => <a onClick={() => { const r = myRequests.find(req => req.id === id); if (r) showDetail(r); }} style={{ color: '#1890ff' }}>{id}</a>,
     },
     {
-      title: '申请原因', dataIndex: 'reason', key: 'reason', width: 160, ellipsis: true, render: (v: string) => v || '-',
-    },
-    {
       title: '资源类型', dataIndex: 'resourceType', key: 'resourceType', width: 120,
       render: (type: string) => <span>{resourceTypeLabels[type] || (type || '-').toUpperCase()}</span>,
     },
     {
       title: '资源名称', dataIndex: 'resourceName', key: 'resourceName', width: 160, ellipsis: true, render: (v: string) => v || '-',
+    },
+    {
+      title: '操作类型', key: 'permissions', width: 160,
+      render: (_: any, record: PermissionRequest) => {
+        const perms = record.permissions && record.permissions.length > 0
+          ? record.permissions
+          : (record as any).requestedPermissions
+            ? String((record as any).requestedPermissions).split(',').map((s: string) => s.trim()).filter(Boolean)
+            : [];
+        const permText = perms
+          .map((p: string) => ({
+            read: '查询', query: '查询',
+            export: '导出', write: '变更', update: '变更',
+            ddl: '结构变更'
+          } as any)[p] || p)
+          .join(' / ');
+        return <span>{permText || '-'}</span>;
+      },
     },
     {
       title: '当前状态', dataIndex: 'status', key: 'status', width: 100,
@@ -320,20 +335,13 @@ const PermissionRequestPage: React.FC = () => {
       children: (
         <Card title="我的权限申请工单" extra={<Button type="primary" icon={<PlusOutlined />} onClick={() => setActiveTab('create')}>新建申请</Button>}>
           <div style={{ marginBottom: 16 }}>
-            <div style={{ marginBottom: 12 }}>
-              <Space><span>状态：</span>
-                <Select value={statusFilter} onChange={v => setStatusFilter(v)} style={{ width: 140 }} size="middle">
-                  <Option value="all">全部</Option><Option value="pending">待审批</Option>
-                  <Option value="approved">已通过</Option><Option value="rejected">已拒绝</Option>
-                  <Option value="cancelled">已撤销</Option>
-                </Select>
-              </Space>
-            </div>
-            <Row gutter={12} align="middle">
-              <Col flex="none"><Select size="middle" defaultValue="submitTime" style={{ width: 110 }}><Option value="submitTime">按提交时间</Option></Select></Col>
-              <Col flex="none"><DatePicker.RangePicker size="middle" placeholder={['起始时间','截止时间']} /></Col>
-              <Col flex="auto"><Input.Search size="middle" placeholder="工单号、姓名、资源名称" value={searchText} onChange={e => setSearchText(e.target.value)} onSearch={() => loadMyRequests(1)} /></Col>
-            </Row>
+            <Space><span>状态：</span>
+              <Select value={statusFilter} onChange={v => setStatusFilter(v)} style={{ width: 140 }} size="middle">
+                <Option value="all">全部</Option><Option value="pending">待审批</Option>
+                <Option value="approved">已通过</Option><Option value="rejected">已拒绝</Option>
+                <Option value="cancelled">已撤销</Option>
+              </Select>
+            </Space>
           </div>
           <Table
             dataSource={myRequests}
