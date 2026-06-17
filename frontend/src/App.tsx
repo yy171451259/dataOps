@@ -108,8 +108,8 @@ const ProtectedLayout: React.FC = () => {
         ]);
         const tData = ticketRes.data?.data;
         const pData = permRes.data?.data;
-        const tCount = Array.isArray(tData) ? tData.length : (tData?.records?.length || 0);
-        const pCount = Array.isArray(pData) ? pData.length : (pData?.records?.length || 0);
+        const tCount = Array.isArray(tData) ? tData.length : (tData?.list?.length || 0);
+        const pCount = Array.isArray(pData) ? pData.length : (pData?.list?.length || 0);
         setPendingCount(tCount + pCount);
       } catch { /* ignore */ }
     };

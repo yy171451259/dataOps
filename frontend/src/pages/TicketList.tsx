@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import {
   Card, Table, Button, Tag, Space, Modal, Form, Input, Select,
   Radio, message, Popconfirm, Descriptions, Alert, Timeline,
-  Row, Col, Progress, Switch, Tooltip, Slider, Spin, DatePicker,
+  Row, Col, Progress, Switch, Tooltip, Slider, Spin,
   Steps,
 } from 'antd';
 import {
@@ -104,7 +104,6 @@ const TicketList: React.FC = () => {
   const [batchInterval, setBatchInterval] = useState(100);
   const [users, setUsers] = useState<any[]>([]);
   const [statusFilter, setStatusFilter] = useState('all');
-  const [searchText, setSearchText] = useState('');
   const [createStep, setCreateStep] = useState(0);
   const [createdTicketId, setCreatedTicketId] = useState<string | null>(null);
   const [ticketCreating, setTicketCreating] = useState(false);
@@ -122,7 +121,6 @@ const TicketList: React.FC = () => {
     try {
       const params: any = { page: p || page, size: s || size };
       if (statusFilter && statusFilter !== 'all') { params.status = statusFilter; }
-      if (searchText.trim()) { params.keyword = searchText.trim(); }
       const res = await ticketApi.list(params);
       const data = res.data?.data;
       if (data && Array.isArray(data.list)) {
@@ -368,7 +366,7 @@ const TicketList: React.FC = () => {
 
   return (
     <div style={{ height: 'calc(100vh - 64px)', overflow: 'auto' }}>
-      <Card title="数据变更工单列表" extra={<Button type="primary" icon={<PlusOutlined />} onClick={() => setModalVisible(true)}>数据新建</Button>}>
+      <Card title="数据变更工单列表" extra={<Button type="primary" icon={<PlusOutlined />} onClick={() => setModalVisible(true)}>新建工单</Button>}>
         <div style={{ marginBottom: 16 }}>
           <div style={{ marginBottom: 12 }}>
             <Space><span>状态：</span>
@@ -380,11 +378,6 @@ const TicketList: React.FC = () => {
               </Select>
             </Space>
           </div>
-          <Row gutter={12} align="middle">
-            <Col flex="none"><Select size="middle" defaultValue="submitTime" style={{ width: 110 }}><Option value="submitTime">按提交时间</Option></Select></Col>
-            <Col flex="none"><DatePicker.RangePicker size="middle" placeholder={['起始时间','截止时间']} /></Col>
-            <Col flex="auto"><Input.Search size="middle" placeholder="工单号、姓名、id或者、AppId、业务背景、任务确认" value={searchText} onChange={e => setSearchText(e.target.value)} onSearch={() => fetchTickets()} /></Col>
-          </Row>
         </div>
         <Table columns={columns} dataSource={tickets} loading={loading} rowKey="id" scroll={{ x: 1200 }}
           pagination={{

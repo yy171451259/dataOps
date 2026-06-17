@@ -8,6 +8,7 @@ import { ticketApi, permissionRequestApi } from '../utils/api';
 import { useAuthStore } from '../store/useAuthStore';
 import { useNavigate } from 'react-router-dom';
 import dayjs from 'dayjs';
+import RequestDetail, { PermissionRequest } from '../components/RequestDetail';
 
 const { TextArea } = Input;
 
@@ -24,6 +25,14 @@ const DashboardPage: React.FC = () => {
   const [selectedItem, setSelectedItem] = useState<any | null>(null);
   const [commentForm] = Form.useForm();
 
+  const [detailVisible, setDetailVisible] = useState(false);
+  const [detailRequest, setDetailRequest] = useState<PermissionRequest | null>(null);
+
+  const showDetail = (record: any) => {
+    setDetailRequest(record);
+    setDetailVisible(true);
+  };
+
   useEffect(() => {
     loadData();
   }, []);
@@ -39,11 +48,11 @@ const DashboardPage: React.FC = () => {
 
       const tickets = (() => {
         const data = pendingTicketRes.data?.data;
-        return Array.isArray(data) ? data : data?.records || [];
+        return Array.isArray(data) ? data : data?.list || [];
       })();
       const permissions = (() => {
         const data = permRes.data?.data;
-        return Array.isArray(data) ? data : data?.records || [];
+        return Array.isArray(data) ? data : data?.list || [];
       })();
 
       const merged = [
@@ -162,8 +171,12 @@ const DashboardPage: React.FC = () => {
           >
             拒绝
           </Button>
-          {record.source === 'ticket' && (
+          {record.source === 'ticket' ? (
             <Button type="link" size="small" icon={<EyeOutlined />} onClick={() => navigate('/tickets')}>
+              查看
+            </Button>
+          ) : (
+            <Button type="link" size="small" icon={<EyeOutlined />} onClick={() => showDetail(record)}>
               查看
             </Button>
           )}
@@ -234,6 +247,17 @@ const DashboardPage: React.FC = () => {
             />
           </Form.Item>
         </Form>
+      </Modal>
+
+      <Modal
+        title="申请详情"
+        open={detailVisible}
+        onCancel={() => setDetailVisible(false)}
+        footer={null}
+        width={820}
+        destroyOnClose
+      >
+        {detailRequest && <RequestDetail request={detailRequest} />}
       </Modal>
     </div>
   );
