@@ -8,7 +8,7 @@ import {
 import {
   PlusOutlined, WarningOutlined, CheckOutlined, UnlockOutlined,
   HistoryOutlined, CloseCircleOutlined, ReloadOutlined,
-  InfoCircleOutlined, EditOutlined,
+  InfoCircleOutlined, EditOutlined, ArrowLeftOutlined, SendOutlined,
 } from '@ant-design/icons';
 import Editor from '@monaco-editor/react';
 import { ticketApi, instanceApi, userApi } from '../utils/api';
@@ -86,13 +86,12 @@ const TicketList: React.FC = () => {
   const [page, setPage] = useState<number>(1);
   const [size, setSize] = useState<number>(10);
   const [total, setTotal] = useState<number>(0);
-  const [modalVisible, setModalVisible] = useState(false);
+  const [activeTab, setActiveTab] = useState('my');
   const [detailVisible, setDetailVisible] = useState(false);
   const [selectedTicket, setSelectedTicket] = useState<Ticket | null>(null);
   const [ticketDetail, setTicketDetail] = useState<any>(null);
   const [approvalRecords, setApprovalRecords] = useState<any[]>([]);
   const [loadingDetail, setLoadingDetail] = useState(false);
-  const [tabKey] = useState('my');
   const [form] = Form.useForm();
   const [databases, setDatabases] = useState<any[]>([]);
   const [databaseNames, setDatabaseNames] = useState<string[]>([]);
@@ -111,9 +110,13 @@ const TicketList: React.FC = () => {
   const [editingRelatedPersons, setEditingRelatedPersons] = useState(false);
   const [editAffectedRowsValue, setEditAffectedRowsValue] = useState('');
   const [editRelatedPersonsValue, setEditRelatedPersonsValue] = useState<string[]>([]);
+  const [reviewSubmitted, setReviewSubmitted] = useState(false);
+  const [currentApprover, setCurrentApprover] = useState<string>('');
+  const [submittingReview, setSubmittingReview] = useState(false);
   const changeType = Form.useWatch('changeType', form);
 
-  useEffect(() => { fetchTickets(); fetchDatabases(); fetchUsers(); }, [tabKey]);
+  useEffect(() => { if (activeTab === 'my') fetchTickets(); }, [activeTab]);
+  useEffect(() => { fetchDatabases(); fetchUsers(); }, []);
   useEffect(() => { fetchTickets(); }, [statusFilter]);
 
   const fetchTickets = async (p?: number, s?: number) => {
@@ -205,10 +208,10 @@ const TicketList: React.FC = () => {
       };
       await ticketApi.create(data);
       message.success('OK');
-      setModalVisible(false); form.resetFields(); setDmlCheckResult(null);
+      form.resetFields(); setDmlCheckResult(null);
       setUseLockFree(false); setBatchSize(1000); setBatchInterval(100);
       setCreateStep(0); setDatabaseNames([]);
-      fetchTickets();
+      setActiveTab('my'); fetchTickets();
     } catch (error: any) {
       message.error(error.response?.data?.message || '创建工单失败');
     }
@@ -261,7 +264,8 @@ const TicketList: React.FC = () => {
       }
       setTicketCreating(false);
     }
-    setCreateStep(1);
+    // 预检查通过，自动跳到审核环节
+    setCreateStep(2);
   };
 
   const handleRollback = async (ticket: Ticket) => {
@@ -356,377 +360,412 @@ const TicketList: React.FC = () => {
     setEditingRelatedPersons(false);
   };
 
-  const closeModal = () => {
-    setModalVisible(false); form.resetFields(); setDmlCheckResult(null);
+  const handleSubmitReview = async () => {
+    if (!createdTicketId) return;
+    setSubmittingReview(true);
+    try {
+      const res = await ticketApi.get(createdTicketId);
+      const ticketData = res.data?.data;
+      const approver = ticketData?.currentApproverId || ticketData?.approverId || '';
+      if (approver) {
+        const approverName = userNameMap[String(approver)] || approver;
+        setCurrentApprover(approverName);
+      } else {
+        setCurrentApprover('待分配');
+      }
+      setReviewSubmitted(true);
+      message.success('已提交审核，等待审批人处理');
+    } catch (e: any) {
+      message.error(e?.response?.data?.message || '提交审核失败');
+    } finally {
+      setSubmittingReview(false);
+    }
+  };
+
+  const closeCreate = () => {
+    form.resetFields(); setDmlCheckResult(null);
     setUseLockFree(false); setBatchSize(1000); setBatchInterval(100);
     setCreateStep(0); setDatabaseNames([]);
     setCreatedTicketId(null); setTicketCreating(false);
     setEditingAffectedRows(false); setEditingRelatedPersons(false);
+    setReviewSubmitted(false); setCurrentApprover(''); setSubmittingReview(false);
+    setActiveTab('my');
   };
 
   return (
-    <div style={{ height: 'calc(100vh - 64px)', overflow: 'auto' }}>
-      <Card title="数据变更工单列表" extra={<Button type="primary" icon={<PlusOutlined />} onClick={() => setModalVisible(true)}>新建工单</Button>}>
-        <div style={{ marginBottom: 16 }}>
-          <div style={{ marginBottom: 12 }}>
-            <Space><span>状态：</span>
-              <Select value={statusFilter} onChange={v => setStatusFilter(v)} style={{ width: 140 }} size="middle">
-                <Option value="all">全部</Option><Option value="pending">待审批</Option><Option value="approving">审批中</Option>
-                <Option value="approved">已审批</Option><Option value="executing">执行中</Option><Option value="done">已完成</Option>
-                <Option value="failed">失败</Option><Option value="rejected">已拒绝</Option>
-                <Option value="cancelled">已取消</Option><Option value="rolled_back">已回滚</Option>
-              </Select>
-            </Space>
-          </div>
-        </div>
-        <Table columns={columns} dataSource={tickets} loading={loading} rowKey="id" scroll={{ x: 1200 }}
-          pagination={{
-            current: page,
-            pageSize: size,
-            total,
-            showTotal: (t: number) => `共 ${t} 条`,
-            showSizeChanger: true,
-            onChange: (p: number, s: number) => {
-              setPage(p);
-              setSize(s);
-              fetchTickets(p, s);
-            },
-          }} />
-      </Card>
-
-      {/* 创建工单弹窗 */}
-      <Modal title="创建数据变更工单" open={modalVisible} onCancel={closeModal} footer={null} width={920}>
-        <div style={{ display: 'flex', flexDirection: 'column' }}>
-          {/* ====== 步骤1：申请 / 基本信息 ====== */}
-          <div style={{ display: 'flex', gap: 12, alignItems: 'stretch' }}>
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: 28, flexShrink: 0 }}>
-              <div style={{ width: 28, height: 28, borderRadius: '50%', background: createdTicketId ? '#52c41a' : '#1890ff', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 'bold', flexShrink: 0 }}>
-                {createdTicketId ? '✓' : '1'}
-              </div>
-              <div style={{ width: 2, flex: 1, minHeight: 16, background: createdTicketId ? '#52c41a' : createStep > 0 ? '#52c41a' : '#d9d9d9' }} />
-            </div>
-            <div style={{ flex: 1, border: '1px solid #e8e8e8', borderRadius: 8, padding: 16, background: '#fff', marginBottom: createStep === 0 && !createdTicketId ? 0 : 4 }}>
-              <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 12 }}>
-                {createdTicketId ? '基本信息' : '申请'}
-              </div>
-              {createdTicketId ? (
-                /* ========== 基本信息（工单已创建，只读展示，部分字段可编辑） ========== */
-                <div>
-                  <Descriptions column={1} size="small" bordered labelStyle={{ width: 110, color: '#666' }} contentStyle={{ color: '#222' }}>
-                    <Descriptions.Item label="提交时间">
-                      <span style={{ fontSize: 13 }}>{dayjs().format('YYYY-MM-DD HH:mm:ss')}</span>
-                    </Descriptions.Item>
-                    <Descriptions.Item label="创建人">
-                      <Tag>{user?.nickname || user?.username || '-'}</Tag>
-                    </Descriptions.Item>
-                    <Descriptions.Item label="原因类别">
-                      {(() => {
-                        const m: Record<string,string> = { config_fix:'配置项订正', init_data:'项目初始化数据', bug_fix:'程序bug', no_backend_feature:'无后台功能的需求处理', data_cleanup:'历史数据清理', test:'测试', misoperation:'误操作', other:'其他' };
-                        return m[form.getFieldValue('reasonType') || ''] || form.getFieldValue('reasonType') || '-';
-                      })()}
-                    </Descriptions.Item>
-                    <Descriptions.Item label="业务背景">
-                      <div style={{ whiteSpace: 'pre-wrap', fontSize: 13 }}>{form.getFieldValue('description') || '-'}</div>
-                    </Descriptions.Item>
-                    <Descriptions.Item label="变更相关人员">
-                      {editingRelatedPersons ? (
-                        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                          <Select mode="multiple" style={{ flex: 1 }} value={editRelatedPersonsValue}
-                            placeholder="请选择" showSearch
-                            filterOption={(input, option) => { const label = option?.label ?? option?.children; return String(label || '').toLowerCase().includes(input.toLowerCase()); }}
-                            onChange={v => setEditRelatedPersonsValue(v)}>
-                            {Array.isArray(users) && users.map((u: any) => <Option key={u.id} value={u.id}>{u.nickname || u.username || u.realName || u.id}</Option>)}
-                          </Select>
-                          <Button size="small" type="primary" onClick={handleSaveRelatedPersons}>保存</Button>
-                          <Button size="small" onClick={() => setEditingRelatedPersons(false)}>取消</Button>
-                        </div>
-                      ) : (
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                          <span style={{ fontSize: 13 }}>
-                            {(form.getFieldValue('relatedPersons') || [])
-                              .map((id: string) => users.find((u: any) => u.id === id)?.nickname || users.find((u: any) => u.id === id)?.username || id).join(', ') || '-'}
-                          </span>
-                          <Button type="link" size="small" icon={<EditOutlined />}
-                            onClick={() => { setEditRelatedPersonsValue(form.getFieldValue('relatedPersons') || []); setEditingRelatedPersons(true); }} />
-                        </div>
-                      )}
-                    </Descriptions.Item>
-                    <Descriptions.Item label="执行方式">
-                      {(() => {
-                        const m: Record<string,string> = { auto_after_approve:'审批通过后自动执行', manual_after_approve:'审批通过后手动执行', scheduled:'定时执行' };
-                        return m[form.getFieldValue('execMode') || ''] || form.getFieldValue('execMode') || '-';
-                      })()}
-                    </Descriptions.Item>
-                    <Descriptions.Item label="变更库">
-                      {form.getFieldValue('databaseId') || '-'}{form.getFieldValue('databaseName') ? ` / ${form.getFieldValue('databaseName')}` : ''}
-                    </Descriptions.Item>
-                    <Descriptions.Item label="影响行数">
-                      {editingAffectedRows ? (
-                        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                          <Input type="number" value={editAffectedRowsValue} onChange={e => setEditAffectedRowsValue(e.target.value)} style={{ width: 150 }} addonAfter="行" />
-                          <Button size="small" type="primary" onClick={handleSaveAffectedRows}>保存</Button>
-                          <Button size="small" onClick={() => setEditingAffectedRows(false)}>取消</Button>
-                        </div>
-                      ) : (
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                          <b style={{ fontSize: 13 }}>
-                            {(() => { const v = form.getFieldValue('affectedRows'); return v != null && v !== '' ? `${Number(v).toLocaleString()} 行` : '-'; })()}
-                          </b>
-                          <Button type="link" size="small" icon={<EditOutlined />}
-                            onClick={() => { setEditAffectedRowsValue(form.getFieldValue('affectedRows') || ''); setEditingAffectedRows(true); }} />
-                        </div>
-                      )}
-                    </Descriptions.Item>
-                    <Descriptions.Item label="变更SQL">
-                      <div style={{ maxHeight: 100, overflow: 'auto', fontSize: 12, fontFamily: 'monospace', whiteSpace: 'pre-wrap', background: '#f5f5f5', color: '#333', padding: 8, borderRadius: 4, border: '1px solid #e8e8e8' }}>
-                        {form.getFieldValue('sqlContent') || '-'}
-                      </div>
-                    </Descriptions.Item>
-                  </Descriptions>
-                </div>
-              ) : (
-                /* ========== 申请表（未创建工单） ========== */
-                <div>
-                  <Form form={form} layout="horizontal" labelCol={{ flex: '90px' }} wrapperCol={{ flex: 'auto' }} onFinish={handleCreateTicket}>
-                <Form.Item label="数据库" required>
-                  <Row gutter={16}>
-                    <Col span={12}>
-                      <Form.Item name="databaseId" noStyle rules={[{ required: true, message: '请选择实例' }]}>
-                        <Select placeholder="选择实例" showSearch onChange={val => handleInstanceChange(val)}>
-                          {databases.map(db => <Option key={db.id} value={db.id}>{db.name || db.instanceName || db.id}{db.host ? ` (${db.host}:${db.port || 3306})` : ''}</Option>)}
-                        </Select>
-                      </Form.Item>
-                    </Col>
-                    <Col span={12}>
-                      <Form.Item name="databaseName" noStyle rules={[{ required: true, message: '请选择Schema' }]}>
-                        <Select placeholder={databaseNames.length > 0 ? '选择Schema' : '请先选择实例'} loading={loadingDbNames}>
-                          {databaseNames.map(name => <Option key={name} value={name}>{name}</Option>)}
-                        </Select>
-                      </Form.Item>
-                    </Col>
-                  </Row>
-                </Form.Item>
-                <Form.Item name="changeType" label="变更类型" initialValue="DML" rules={[{ required: true, message: '请选择变更类型' }]}>
-                  <Radio.Group>
-                    <Radio value="DML">普通DML（数据变更）</Radio>
-                    <Radio value="DDL">普通DDL（结构变更）</Radio>
-                    <Radio value="lock_free_dml">无锁变更DML</Radio>
-                    <Radio value="lock_free_ddl">无锁变更DDL</Radio>
-                  </Radio.Group>
-                </Form.Item>
-                {(changeType === 'lock_free_dml' || changeType === 'lock_free_ddl') && (
-                  <Alert message="无锁变更不作数据备份" description="无锁DML采用分批执行，无锁DDL采用Online DDL机制，均不生成数据备份。如需回滚需自行提供回滚SQL。" type="info" showIcon icon={<InfoCircleOutlined />} style={{ marginBottom: 16 }} />
-                )}
-                {changeType === 'lock_free_dml' && (
-                  <div style={{ padding: '12px 16px', background: '#f9f0ff', borderRadius: 4, border: '1px solid #d3adf7', marginBottom: 16 }}>
-                    <Row gutter={16} align="middle" style={{ marginBottom: 12 }}>
-                      <Col span={3}>批次大小：</Col>
-                      <Col span={16}><Slider min={100} max={5000} step={100} value={batchSize} onChange={setBatchSize} /></Col>
-                      <Col span={3} style={{ textAlign: 'right', fontWeight: 'bold', color: '#722ed1' }}>{batchSize} 行/批</Col>
-                    </Row>
-                    <Row gutter={16} align="middle">
-                      <Col span={3}>执行速度：</Col>
-                      <Col span={16}><Slider min={0} max={500} step={50} value={batchInterval} onChange={setBatchInterval} /></Col>
-                      <Col span={3} style={{ textAlign: 'right', fontWeight: 'bold', color: '#722ed1' }}>{getSpeedLabel(batchInterval)}</Col>
-                    </Row>
-                  </div>
-                )}
-                {changeType === 'lock_free_ddl' && (
-                  <Alert message="Online DDL 无锁变更" description="将使用 pt-osc / gh-ost 等工具在线执行DDL变更，不锁表。适用于大表结构变更场景。" type="info" showIcon style={{ marginBottom: 16 }} />
-                )}
-                <Form.Item label="SQL 文本" required>
-                  <div style={{ border: '1px solid #d9d9d9', borderRadius: 4 }}>
-                    <Editor height="200px" defaultLanguage="sql" theme="vs" options={{ minimap: { enabled: false }, fontSize: 13, lineNumbers: 'on' }} onChange={value => form.setFieldValue('sqlContent', value || '')} />
-                  </div>
-                </Form.Item>
-                <Form.Item name="sqlContent" rules={[{ required: true, message: '请输入SQL' }]} hidden>
-                  <Input />
-                </Form.Item>
-                <Form.Item name="reasonType" label="原因类型" rules={[{ required: true, message: '请选择原因类型' }]}>
-                  <Select placeholder="请选择" allowClear>
-                    <Option value="config_fix">配置项订正</Option><Option value="init_data">项目初始化数据</Option>
-                    <Option value="bug_fix">程序bug</Option><Option value="no_backend_feature">无后台功能的需求处理</Option>
-                    <Option value="data_cleanup">历史数据清理</Option><Option value="test">测试</Option>
-                    <Option value="misoperation">误操作</Option><Option value="other">其他</Option>
-                  </Select>
-                </Form.Item>
-                <Form.Item name="description" label="业务背景" rules={[{ required: true, message: '请填写业务背景' }]}>
-                  <TextArea rows={4} placeholder="为了减少沟通成本，请在这里认真填写业务背景" />
-                </Form.Item>
-                <Form.Item name="execMode" label="执行方式" initialValue="auto_after_approve" rules={[{ required: true, message: '请选择执行方式' }]}>
-                  <Select placeholder="请选择执行方式">
-                    <Option value="auto_after_approve">审批通过后自动执行</Option>
-                    <Option value="manual_after_approve">审批通过后手动执行</Option>
-                    <Option value="scheduled">定时执行</Option>
-                  </Select>
-                </Form.Item>
-                <Form.Item name="affectedRows" label="影响行数" rules={[{ required: true, message: '请填写影响行数' }]}><Input type="number" placeholder="预估影响行数（可选）" addonAfter="行" /></Form.Item>
-                {/*<Form.Item label="回滚SQL">
-                  <div style={{ border: '1px solid #d9d9d9', borderRadius: 4 }}>
-                    <Editor height="160px" defaultLanguage="sql" theme="vs" options={{ minimap: { enabled: false }, fontSize: 13 }} onChange={value => form.setFieldValue('rollbackSql', value || '')} />
-                  </div>
-                </Form.Item>*/}
-                <Form.Item name="relatedPersons" label="变更相关人员">
-                  <Select mode="multiple" placeholder="请输入用户昵称进行筛选" allowClear showSearch
-                    filterOption={(input, option) => { const label = option?.label ?? option?.children; return String(label || '').toLowerCase().includes(input.toLowerCase()); }}
-                    style={{ width: '100%' }}>
-                    {Array.isArray(users) && users.map((u: any) => <Option key={u.id} value={u.id}>{u.nickname || u.username || u.realName || u.id}</Option>)}
-                  </Select>
-                </Form.Item>
-              </Form>
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 12, borderTop: '1px solid #f0f0f0', paddingTop: 12 }}>
-                <Button onClick={closeModal}>取消</Button>
-                <Button type="primary" loading={checkingDml || ticketCreating} onClick={handleSubmitApplication}>提交申请</Button>
-              </div>
-                </div>
-              )}
+    <div>
+      {/* ====== 我的工单 Tab ====== */}
+      {activeTab === 'my' && (
+        <Card title="数据变更工单列表" extra={<Button type="primary" icon={<PlusOutlined />} onClick={() => setActiveTab('create')}>新建工单</Button>}>
+          <div style={{ marginBottom: 16 }}>
+            <div style={{ marginBottom: 12 }}>
+              <Space><span>状态：</span>
+                <Select value={statusFilter} onChange={v => setStatusFilter(v)} style={{ width: 140 }} size="middle">
+                  <Option value="all">全部</Option><Option value="pending">待审批</Option><Option value="approving">审批中</Option>
+                  <Option value="approved">已审批</Option><Option value="executing">执行中</Option><Option value="done">已完成</Option>
+                  <Option value="failed">失败</Option><Option value="rejected">已拒绝</Option>
+                  <Option value="cancelled">已取消</Option><Option value="rolled_back">已回滚</Option>
+                </Select>
+              </Space>
             </div>
           </div>
+          <Table columns={columns} dataSource={tickets} loading={loading} rowKey="id" scroll={{ x: 1200 }}
+            pagination={{
+              current: page,
+              pageSize: size,
+              total,
+              showTotal: (t: number) => `共 ${t} 条`,
+              showSizeChanger: true,
+              onChange: (p: number, s: number) => {
+                setPage(p);
+                setSize(s);
+                fetchTickets(p, s);
+              },
+            }} />
+        </Card>
+      )}
 
-          {/* ====== 步骤2：预检查 ====== */}
-          <div style={{ display: 'flex', gap: 12, alignItems: 'stretch' }}>
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: 28, flexShrink: 0 }}>
-              <div style={{ width: 28, height: 28, borderRadius: '50%', background: dmlCheckResult?.riskLevel === 'error' ? '#ff4d4f' : createStep >= 1 ? (createStep > 1 ? '#52c41a' : '#1890ff') : '#d9d9d9', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 'bold', flexShrink: 0 }}>
-                {dmlCheckResult?.riskLevel === 'error' ? '?' : createStep > 1 ? '?' : '2'}
+      {/* ====== 新建工单 Tab ====== */}
+      {activeTab === 'create' && (
+        <Card title="新建数据变更工单" extra={<Button icon={<ArrowLeftOutlined />} onClick={closeCreate}>返回列表</Button>} style={{ maxWidth: '100%' }}>
+          <div style={{ display: 'flex', flexDirection: 'column' }}>
+            {/* ====== 步骤1：申请 / 基本信息 ====== */}
+            <div style={{ display: 'flex', gap: 12, alignItems: 'stretch' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: 28, flexShrink: 0 }}>
+                <div style={{ width: 28, height: 28, borderRadius: '50%', background: createdTicketId ? '#52c41a' : '#1890ff', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 'bold', flexShrink: 0 }}>
+                  {createdTicketId ? '✓' : '1'}
+                </div>
+                <div style={{ width: 2, flex: 1, minHeight: 16, background: createdTicketId ? '#52c41a' : createStep > 0 ? '#52c41a' : '#d9d9d9' }} />
               </div>
-              <div style={{ width: 2, flex: 1, minHeight: 16, background: createStep > 1 ? '#52c41a' : createStep >= 1 ? '#1890ff' : '#d9d9d9' }} />
-            </div>
-            <div style={{ flex: 1, border: '1px solid #e8e8e8', borderRadius: 8, padding: 16, background: '#fff', marginBottom: createStep === 1 ? 0 : 4 }}>
-              <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 8, color: createStep >= 1 ? '#262626' : '#bfbfbf' }}>预检查</div>
-              {createStep >= 1 ? (
-                dmlCheckResult ? (
+              <div style={{ flex: 1, border: '1px solid #e8e8e8', borderRadius: 8, padding: 16, background: '#fff', marginBottom: createStep === 0 && !createdTicketId ? 0 : 4 }}>
+                <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 12 }}>
+                  {createdTicketId ? '基本信息' : '申请'}
+                </div>
+                {createdTicketId ? (
+                  /* ========== 基本信息（工单已创建，只读展示，部分字段可编辑） ========== */
                   <div>
-                    <Alert message={dmlCheckResult.riskLevel === 'error' ? '预检查未通过' : '预检查通过'} type={dmlCheckResult.riskLevel === 'error' ? 'error' : 'success'} showIcon style={{ marginBottom: 12 }} />
-                    <Row gutter={16} style={{ marginBottom: 8 }}>
-                      <Col><span style={{ color: '#666' }}>预估影响总行数：</span><b style={{ color: dmlCheckResult.estimateAffectRows > 10000 ? '#ff4d4f' : '#52c41a' }}>{dmlCheckResult.estimateAffectRows.toLocaleString()} 行</b><span style={{ color: '#ff4d4f', marginLeft: 8 }}>（系统统计值，实际影响行数仍然以SQL执行为准!）</span></Col>
-                    </Row>
-                    {(() => {
-                      const entered = form.getFieldValue('affectedRows');
-                      const estimated = dmlCheckResult.estimateAffectRows;
-                      if (entered != null && entered !== '' && estimated != null && Number(entered) !== estimated) {
-                        return (
-                          <Alert
-                            message={`您录入的影响行数（${Number(entered).toLocaleString()} 行）与系统预估行数（${estimated.toLocaleString()} 行）不一致，请核实后继续！`}
-                            type="warning"
-                            showIcon
-                            style={{ marginBottom: 8 }}
-                          />
-                        );
-                      }
-                      return null;
-                    })()}
-                    {dmlCheckResult.tables && dmlCheckResult.tables.length > 1 && (
-                      <Table size="small" dataSource={dmlCheckResult.tables.map((t, idx) => ({ ...t, key: idx }))} pagination={false} style={{ marginBottom: 12 }}
-                        columns={[
-                          { title: '#', width: 30, render: (_: any, __: any, idx: number) => idx + 1 },
-                          { title: '目标表', dataIndex: 'tableName', ellipsis: true, width: 130 },
-                          { title: '大小', dataIndex: 'tableSizeHuman', width: 80 },
-                          { title: '影响行数', dataIndex: 'estimateAffectRows', width: 90, render: (v: number) => <b>{v.toLocaleString()}</b> },
-                          { title: '主键', dataIndex: 'primaryKey', width: 90, render: (v: string) => v || '-' },
-                        ]} />
-                    )}
-                    {dmlCheckResult.needLockFree && createStep === 1 && (
-                      <div style={{ padding: '8px 12px', background: '#f9f0ff', borderRadius: 4, border: '1px solid #d3adf7', marginBottom: 8 }}>
-                        <Row align="middle" style={{ marginBottom: 8 }}><Col span={4}><span style={{ fontWeight: 500, fontSize: 13 }}>启用无锁变更：</span></Col><Col><Switch checked={useLockFree} onChange={setUseLockFree} checkedChildren={<CheckOutlined />} size="small" /></Col></Row>
-                        {useLockFree && (<>
-                          <Row gutter={16} align="middle" style={{ marginBottom: 8 }}><Col span={3}><span style={{ fontSize: 12 }}>批次大小：</span></Col><Col span={16}><Slider min={100} max={5000} step={100} value={batchSize} onChange={setBatchSize} /></Col><Col span={3} style={{ textAlign: 'right', fontWeight: 'bold', color: '#722ed1', fontSize: 12 }}>{batchSize} 行/批</Col></Row>
-                          <Row gutter={16} align="middle"><Col span={3}><span style={{ fontSize: 12 }}>执行速度：</span></Col><Col span={16}><Slider min={0} max={500} step={50} value={batchInterval} onChange={setBatchInterval} /></Col><Col span={3} style={{ textAlign: 'right', fontWeight: 'bold', color: '#722ed1', fontSize: 12 }}>{getSpeedLabel(batchInterval)}</Col></Row>
-                        </>)}
-                      </div>
-                    )}
-                    {dmlCheckResult.message && <Alert message={dmlCheckResult.message} type={dmlCheckResult.riskLevel === 'error' ? 'error' : dmlCheckResult.needLockFree ? 'warning' : 'info'} showIcon />}
+                    <Descriptions column={1} size="small" bordered labelStyle={{ width: 110, color: '#666' }} contentStyle={{ color: '#222' }}>
+                      <Descriptions.Item label="提交时间">
+                        <span style={{ fontSize: 13 }}>{dayjs().format('YYYY-MM-DD HH:mm:ss')}</span>
+                      </Descriptions.Item>
+                      <Descriptions.Item label="创建人">
+                        <Tag>{user?.nickname || user?.username || '-'}</Tag>
+                      </Descriptions.Item>
+                      <Descriptions.Item label="原因类别">
+                        {(() => {
+                          const m: Record<string,string> = { config_fix:'配置项订正', init_data:'项目初始化数据', bug_fix:'程序bug', no_backend_feature:'无后台功能的需求处理', data_cleanup:'历史数据清理', test:'测试', misoperation:'误操作', other:'其他' };
+                          return m[form.getFieldValue('reasonType') || ''] || form.getFieldValue('reasonType') || '-';
+                        })()}
+                      </Descriptions.Item>
+                      <Descriptions.Item label="业务背景">
+                        <div style={{ whiteSpace: 'pre-wrap', fontSize: 13 }}>{form.getFieldValue('description') || '-'}</div>
+                      </Descriptions.Item>
+                      <Descriptions.Item label="变更相关人员">
+                        {editingRelatedPersons ? (
+                          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                            <Select mode="multiple" style={{ flex: 1 }} value={editRelatedPersonsValue}
+                              placeholder="请选择" showSearch
+                              filterOption={(input, option) => { const label = option?.label ?? option?.children; return String(label || '').toLowerCase().includes(input.toLowerCase()); }}
+                              onChange={v => setEditRelatedPersonsValue(v)}>
+                              {Array.isArray(users) && users.map((u: any) => <Option key={u.id} value={u.id}>{u.nickname || u.username || u.realName || u.id}</Option>)}
+                            </Select>
+                            <Button size="small" type="primary" onClick={handleSaveRelatedPersons}>保存</Button>
+                            <Button size="small" onClick={() => setEditingRelatedPersons(false)}>取消</Button>
+                          </div>
+                        ) : (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <span style={{ fontSize: 13 }}>
+                              {(form.getFieldValue('relatedPersons') || [])
+                                .map((id: string) => users.find((u: any) => u.id === id)?.nickname || users.find((u: any) => u.id === id)?.username || id).join(', ') || '-'}
+                            </span>
+                            <Button type="link" size="small" icon={<EditOutlined />}
+                              onClick={() => { setEditRelatedPersonsValue(form.getFieldValue('relatedPersons') || []); setEditingRelatedPersons(true); }} />
+                          </div>
+                        )}
+                      </Descriptions.Item>
+                      <Descriptions.Item label="执行方式">
+                        {(() => {
+                          const m: Record<string,string> = { auto_after_approve:'审批通过后自动执行', manual_after_approve:'审批通过后手动执行', scheduled:'定时执行' };
+                          return m[form.getFieldValue('execMode') || ''] || form.getFieldValue('execMode') || '-';
+                        })()}
+                      </Descriptions.Item>
+                      <Descriptions.Item label="变更库">
+                        {form.getFieldValue('databaseId') || '-'}{form.getFieldValue('databaseName') ? ` / ${form.getFieldValue('databaseName')}` : ''}
+                      </Descriptions.Item>
+                      <Descriptions.Item label="影响行数">
+                        {editingAffectedRows ? (
+                          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                            <Input type="number" value={editAffectedRowsValue} onChange={e => setEditAffectedRowsValue(e.target.value)} style={{ width: 150 }} addonAfter="行" />
+                            <Button size="small" type="primary" onClick={handleSaveAffectedRows}>保存</Button>
+                            <Button size="small" onClick={() => setEditingAffectedRows(false)}>取消</Button>
+                          </div>
+                        ) : (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <b style={{ fontSize: 13 }}>
+                              {(() => { const v = form.getFieldValue('affectedRows'); return v != null && v !== '' ? `${Number(v).toLocaleString()} 行` : '-'; })()}
+                            </b>
+                            <Button type="link" size="small" icon={<EditOutlined />}
+                              onClick={() => { setEditAffectedRowsValue(form.getFieldValue('affectedRows') || ''); setEditingAffectedRows(true); }} />
+                          </div>
+                        )}
+                      </Descriptions.Item>
+                      <Descriptions.Item label="变更SQL">
+                        <div style={{ maxHeight: 100, overflow: 'auto', fontSize: 12, fontFamily: 'monospace', whiteSpace: 'pre-wrap', background: '#f5f5f5', color: '#333', padding: 8, borderRadius: 4, border: '1px solid #e8e8e8' }}>
+                          {form.getFieldValue('sqlContent') || '-'}
+                        </div>
+                      </Descriptions.Item>
+                    </Descriptions>
                   </div>
-                ) : <span style={{ color: '#999' }}>等待检测...</span>
-              ) : <span style={{ color: '#bfbfbf' }}>请先填写申请信息并提交</span>}
-              {createStep === 1 && (
-                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 12, borderTop: '1px solid #f0f0f0', paddingTop: 12 }}>
-                  <Button onClick={() => setCreateStep(0)}>上一步</Button>
-                  <Button type="primary" disabled={dmlCheckResult?.riskLevel === 'error'} onClick={() => setCreateStep(2)}>下一步</Button>
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* ====== 步骤3：提交审核 ====== */}
-          <div style={{ display: 'flex', gap: 12, alignItems: 'stretch' }}>
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: 28, flexShrink: 0 }}>
-              <div style={{ width: 28, height: 28, borderRadius: '50%', background: createStep >= 2 ? '#1890ff' : '#d9d9d9', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 'bold', flexShrink: 0 }}>3</div>
-              <div style={{ width: 2, flex: 1, minHeight: 16, background: createStep >= 2 ? '#1890ff' : '#d9d9d9' }} />
-            </div>
-            <div style={{ flex: 1, border: '1px solid #e8e8e8', borderRadius: 8, padding: 16, background: '#fff', marginBottom: createStep === 2 ? 0 : 4 }}>
-              <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 8, color: createStep >= 2 ? '#262626' : '#bfbfbf' }}>提交审核</div>
-              {createStep >= 2 ? (
-                <div>
-                  <Descriptions column={1} size="small" bordered style={{ marginBottom: 12 }}>
-                    <Descriptions.Item label="实例">{form.getFieldValue('databaseId')}</Descriptions.Item>
-                    <Descriptions.Item label="目标Schema">{form.getFieldValue('databaseName')}</Descriptions.Item>
-                    <Descriptions.Item label="变更类型">{form.getFieldValue('changeType')}</Descriptions.Item>
-                    <Descriptions.Item label="录入影响行数"><b>{(() => { const v = form.getFieldValue('affectedRows'); return v != null && v !== '' ? `${Number(v).toLocaleString()} 行` : '-'; })()}</b></Descriptions.Item>
-                    <Descriptions.Item label="系统预估影响行数"><b style={{ color: (dmlCheckResult?.estimateAffectRows || 0) > 10000 ? '#ff4d4f' : '#52c41a' }}>{dmlCheckResult?.estimateAffectRows?.toLocaleString() || '-'} 行</b></Descriptions.Item>
-                    {(() => {
-                      const entered = form.getFieldValue('affectedRows');
-                      const estimated = dmlCheckResult?.estimateAffectRows;
-                      if (entered != null && entered !== '' && estimated != null && Number(entered) !== estimated) {
-                        return (
-                          <>
-                            <Descriptions.Item label={<span style={{ color: '#faad14' }}>⚠ 行数不一致</span>}>
-                              <span style={{ color: '#faad14', fontWeight: 500 }}>
-                                您录入 {Number(entered).toLocaleString()} 行，系统预估 {estimated.toLocaleString()} 行，请核实！
-                              </span>
-                            </Descriptions.Item>
-                          </>
-                        );
-                      }
-                      return null;
-                    })()}
-                    <Descriptions.Item label="业务背景">{form.getFieldValue('description') || '-'}</Descriptions.Item>
-                    <Descriptions.Item label="SQL"><div style={{ maxHeight: 80, overflow: 'auto', fontSize: 12, fontFamily: 'monospace', whiteSpace: 'pre-wrap' }}>{form.getFieldValue('sqlContent') || '-'}</div></Descriptions.Item>
-                  </Descriptions>
-                  {createdTicketId ? (
-                    <Alert message="工单已创建，已进入审批流程" type="success" showIcon />
-                  ) : (
-                    <Alert message="点击「提交审核」将创建工单并进入审批流程" type="info" showIcon />
+                ) : (
+                  /* ========== 申请表（未创建工单） ========== */
+                  <div>
+                    <Form form={form} layout="horizontal" labelCol={{ flex: '90px' }} wrapperCol={{ flex: 'auto' }} onFinish={handleCreateTicket}>
+                  <Form.Item label="数据库" required>
+                    <Row gutter={16}>
+                      <Col span={12}>
+                        <Form.Item name="databaseId" noStyle rules={[{ required: true, message: '请选择实例' }]}>
+                          <Select placeholder="选择实例" showSearch onChange={val => handleInstanceChange(val)}>
+                            {databases.map(db => <Option key={db.id} value={db.id}>{db.name || db.instanceName || db.id}{db.host ? ` (${db.host}:${db.port || 3306})` : ''}</Option>)}
+                          </Select>
+                        </Form.Item>
+                      </Col>
+                      <Col span={12}>
+                        <Form.Item name="databaseName" noStyle rules={[{ required: true, message: '请选择Schema' }]}>
+                          <Select placeholder={databaseNames.length > 0 ? '选择Schema' : '请先选择实例'} loading={loadingDbNames}>
+                            {databaseNames.map(name => <Option key={name} value={name}>{name}</Option>)}
+                          </Select>
+                        </Form.Item>
+                      </Col>
+                    </Row>
+                  </Form.Item>
+                  <Form.Item name="changeType" label="变更类型" initialValue="DML" rules={[{ required: true, message: '请选择变更类型' }]}>
+                    <Radio.Group>
+                      <Radio value="DML">普通DML（数据变更）</Radio>
+                      <Radio value="DDL">普通DDL（结构变更）</Radio>
+                      <Radio value="lock_free_dml">无锁变更DML</Radio>
+                      <Radio value="lock_free_ddl">无锁变更DDL</Radio>
+                    </Radio.Group>
+                  </Form.Item>
+                  {(changeType === 'lock_free_dml' || changeType === 'lock_free_ddl') && (
+                    <Alert message="无锁变更不作数据备份" description="无锁DML采用分批执行，无锁DDL采用Online DDL机制，均不生成数据备份。如需回滚需自行提供回滚SQL。" type="info" showIcon icon={<InfoCircleOutlined />} style={{ marginBottom: 16 }} />
                   )}
-                </div>
-              ) : <span style={{ color: '#bfbfbf' }}>预检查通过后可提交审核</span>}
-              {createStep === 2 && (
-                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 12, borderTop: '1px solid #f0f0f0', paddingTop: 12 }}>
-                  <Button onClick={() => setCreateStep(1)}>上一步</Button>
-                  <Button onClick={closeModal}>取消</Button>
-                  {createdTicketId ? (
-                    <Button type="primary" onClick={() => { closeModal(); fetchTickets(); }}>完成</Button>
-                  ) : (
-                    <Button type="primary" loading={loading} onClick={() => form.submit()}>提交审核</Button>
+                  {changeType === 'lock_free_dml' && (
+                    <div style={{ padding: '12px 16px', background: '#f9f0ff', borderRadius: 4, border: '1px solid #d3adf7', marginBottom: 16 }}>
+                      <Row gutter={16} align="middle" style={{ marginBottom: 12 }}>
+                        <Col span={3}>批次大小：</Col>
+                        <Col span={16}><Slider min={100} max={5000} step={100} value={batchSize} onChange={setBatchSize} /></Col>
+                        <Col span={3} style={{ textAlign: 'right', fontWeight: 'bold', color: '#722ed1' }}>{batchSize} 行/批</Col>
+                      </Row>
+                      <Row gutter={16} align="middle">
+                        <Col span={3}>执行速度：</Col>
+                        <Col span={16}><Slider min={0} max={500} step={50} value={batchInterval} onChange={setBatchInterval} /></Col>
+                        <Col span={3} style={{ textAlign: 'right', fontWeight: 'bold', color: '#722ed1' }}>{getSpeedLabel(batchInterval)}</Col>
+                      </Row>
+                    </div>
                   )}
+                  {changeType === 'lock_free_ddl' && (
+                    <Alert message="Online DDL 无锁变更" description="将使用 pt-osc / gh-ost 等工具在线执行DDL变更，不锁表。适用于大表结构变更场景。" type="info" showIcon style={{ marginBottom: 16 }} />
+                  )}
+                  <Form.Item label="SQL 文本" required>
+                    <div style={{ border: '1px solid #d9d9d9', borderRadius: 4 }}>
+                      <Editor height="200px" defaultLanguage="sql" theme="vs" options={{ minimap: { enabled: false }, fontSize: 13, lineNumbers: 'on' }} onChange={value => form.setFieldValue('sqlContent', value || '')} />
+                    </div>
+                  </Form.Item>
+                  <Form.Item name="sqlContent" rules={[{ required: true, message: '请输入SQL' }]} hidden>
+                    <Input />
+                  </Form.Item>
+                  <Form.Item name="reasonType" label="原因类型" rules={[{ required: true, message: '请选择原因类型' }]}>
+                    <Select placeholder="请选择" allowClear>
+                      <Option value="config_fix">配置项订正</Option><Option value="init_data">项目初始化数据</Option>
+                      <Option value="bug_fix">程序bug</Option><Option value="no_backend_feature">无后台功能的需求处理</Option>
+                      <Option value="data_cleanup">历史数据清理</Option><Option value="test">测试</Option>
+                      <Option value="misoperation">误操作</Option><Option value="other">其他</Option>
+                    </Select>
+                  </Form.Item>
+                  <Form.Item name="description" label="业务背景" rules={[{ required: true, message: '请填写业务背景' }]}>
+                    <TextArea rows={4} placeholder="为了减少沟通成本，请在这里认真填写业务背景" />
+                  </Form.Item>
+                  <Form.Item name="execMode" label="执行方式" initialValue="auto_after_approve" rules={[{ required: true, message: '请选择执行方式' }]}>
+                    <Select placeholder="请选择执行方式">
+                      <Option value="auto_after_approve">审批通过后自动执行</Option>
+                      <Option value="manual_after_approve">审批通过后手动执行</Option>
+                      <Option value="scheduled">定时执行</Option>
+                    </Select>
+                  </Form.Item>
+                  <Form.Item name="affectedRows" label="影响行数" rules={[{ required: true, message: '请填写影响行数' }]}><Input type="number" placeholder="预估影响行数（可选）" addonAfter="行" /></Form.Item>
+                  <Form.Item name="relatedPersons" label="变更相关人员">
+                    <Select mode="multiple" placeholder="请输入用户昵称进行筛选" allowClear showSearch
+                      filterOption={(input, option) => { const label = option?.label ?? option?.children; return String(label || '').toLowerCase().includes(input.toLowerCase()); }}
+                      style={{ width: '100%' }}>
+                      {Array.isArray(users) && users.map((u: any) => <Option key={u.id} value={u.id}>{u.nickname || u.username || u.realName || u.id}</Option>)}
+                    </Select>
+                  </Form.Item>
+                </Form>
+                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 12, borderTop: '1px solid #f0f0f0', paddingTop: 12 }}>
+                  <Button onClick={closeCreate}>取消</Button>
+                  <Button type="primary" loading={checkingDml || ticketCreating} onClick={handleSubmitApplication}>提交申请</Button>
                 </div>
-              )}
+                  </div>
+                )}
+              </div>
             </div>
-          </div>
 
-          {/* ====== 步骤4：执行 ====== */}
-          <div style={{ display: 'flex', gap: 12, alignItems: 'stretch' }}>
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: 28, flexShrink: 0 }}>
-              <div style={{ width: 28, height: 28, borderRadius: '50%', background: '#d9d9d9', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 'bold', flexShrink: 0 }}>4</div>
-              <div style={{ width: 2, flex: 1, minHeight: 16, background: '#d9d9d9' }} />
+            {/* ====== 步骤2：预检查 ====== */}
+            <div style={{ display: 'flex', gap: 12, alignItems: 'stretch' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: 28, flexShrink: 0 }}>
+                <div style={{ width: 28, height: 28, borderRadius: '50%', background: dmlCheckResult?.riskLevel === 'error' ? '#ff4d4f' : createStep >= 1 ? (createStep > 1 ? '#52c41a' : '#1890ff') : '#d9d9d9', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 'bold', flexShrink: 0 }}>
+                  {dmlCheckResult?.riskLevel === 'error' ? '?' : createStep > 1 ? '?' : '2'}
+                </div>
+                <div style={{ width: 2, flex: 1, minHeight: 16, background: createStep > 1 ? '#52c41a' : createStep >= 1 ? '#1890ff' : '#d9d9d9' }} />
+              </div>
+              <div style={{ flex: 1, border: '1px solid #e8e8e8', borderRadius: 8, padding: 16, background: '#fff', marginBottom: createStep === 1 ? 0 : 4 }}>
+                <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 8, color: createStep >= 1 ? '#262626' : '#bfbfbf' }}>预检查</div>
+                {createStep >= 1 ? (
+                  dmlCheckResult ? (
+                    <div>
+                      <Alert message={dmlCheckResult.riskLevel === 'error' ? '预检查未通过' : '预检查通过'} type={dmlCheckResult.riskLevel === 'error' ? 'error' : 'success'} showIcon style={{ marginBottom: 12 }} />
+                      <Row gutter={16} style={{ marginBottom: 8 }}>
+                        <Col><span style={{ color: '#666' }}>预估影响总行数：</span><b style={{ color: dmlCheckResult.estimateAffectRows > 10000 ? '#ff4d4f' : '#52c41a' }}>{dmlCheckResult.estimateAffectRows.toLocaleString()} 行</b><span style={{ color: '#ff4d4f', marginLeft: 8 }}>（系统统计值，实际影响行数仍然以SQL执行为准!）</span></Col>
+                      </Row>
+                      {(() => {
+                        const entered = form.getFieldValue('affectedRows');
+                        const estimated = dmlCheckResult.estimateAffectRows;
+                        if (entered != null && entered !== '' && estimated != null && Number(entered) !== estimated) {
+                          return (
+                            <Alert
+                              message={`您录入的影响行数（${Number(entered).toLocaleString()} 行）与系统预估行数（${estimated.toLocaleString()} 行）不一致，请核实后继续！`}
+                              type="warning"
+                              showIcon
+                              style={{ marginBottom: 8 }}
+                            />
+                          );
+                        }
+                        return null;
+                      })()}
+                      {dmlCheckResult.tables && dmlCheckResult.tables.length > 1 && (
+                        <Table size="small" dataSource={dmlCheckResult.tables.map((t, idx) => ({ ...t, key: idx }))} pagination={false} style={{ marginBottom: 12 }}
+                          columns={[
+                            { title: '#', width: 30, render: (_: any, __: any, idx: number) => idx + 1 },
+                            { title: '目标表', dataIndex: 'tableName', ellipsis: true, width: 130 },
+                            { title: '大小', dataIndex: 'tableSizeHuman', width: 80 },
+                            { title: '影响行数', dataIndex: 'estimateAffectRows', width: 90, render: (v: number) => <b>{v.toLocaleString()}</b> },
+                            { title: '主键', dataIndex: 'primaryKey', width: 90, render: (v: string) => v || '-' },
+                          ]} />
+                      )}
+                      {dmlCheckResult.needLockFree && createStep === 1 && (
+                        <div style={{ padding: '8px 12px', background: '#f9f0ff', borderRadius: 4, border: '1px solid #d3adf7', marginBottom: 8 }}>
+                          <Row align="middle" style={{ marginBottom: 8 }}><Col span={4}><span style={{ fontWeight: 500, fontSize: 13 }}>启用无锁变更：</span></Col><Col><Switch checked={useLockFree} onChange={setUseLockFree} checkedChildren={<CheckOutlined />} size="small" /></Col></Row>
+                          {useLockFree && (<>
+                            <Row gutter={16} align="middle" style={{ marginBottom: 8 }}><Col span={3}><span style={{ fontSize: 12 }}>批次大小：</span></Col><Col span={16}><Slider min={100} max={5000} step={100} value={batchSize} onChange={setBatchSize} /></Col><Col span={3} style={{ textAlign: 'right', fontWeight: 'bold', color: '#722ed1', fontSize: 12 }}>{batchSize} 行/批</Col></Row>
+                            <Row gutter={16} align="middle"><Col span={3}><span style={{ fontSize: 12 }}>执行速度：</span></Col><Col span={16}><Slider min={0} max={500} step={50} value={batchInterval} onChange={setBatchInterval} /></Col><Col span={3} style={{ textAlign: 'right', fontWeight: 'bold', color: '#722ed1', fontSize: 12 }}>{getSpeedLabel(batchInterval)}</Col></Row>
+                          </>)}
+                        </div>
+                      )}
+                      {dmlCheckResult.message && <Alert message={dmlCheckResult.message} type={dmlCheckResult.riskLevel === 'error' ? 'error' : dmlCheckResult.needLockFree ? 'warning' : 'info'} showIcon />}
+                    </div>
+                  ) : <span style={{ color: '#999' }}>等待检测...</span>
+                ) : <span style={{ color: '#bfbfbf' }}>请先填写申请信息并提交</span>}
+                {createStep === 1 && dmlCheckResult?.riskLevel === 'error' && (
+                  <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 12, borderTop: '1px solid #f0f0f0', paddingTop: 12 }}>
+                    <Button onClick={() => { setCreateStep(0); setDmlCheckResult(null); }}>返回修改</Button>
+                  </div>
+                )}
+              </div>
             </div>
-            <div style={{ flex: 1, border: '1px solid #e8e8e8', borderRadius: 8, padding: 12, background: '#fff' }}>
-              <div style={{ fontWeight: 600, fontSize: 14, color: '#bfbfbf' }}>执行</div>
-              <span style={{ color: '#bfbfbf' }}>工单审批通过后自动执行</span>
-            </div>
-          </div>
 
-          {/* ====== 步骤5：完成 ====== */}
-          <div style={{ display: 'flex', gap: 12, alignItems: 'stretch' }}>
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: 28, flexShrink: 0 }}>
-              <div style={{ width: 28, height: 28, borderRadius: '50%', background: '#d9d9d9', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 'bold', flexShrink: 0 }}>5</div>
+            {/* ====== 步骤3：审核 ====== */}
+            <div style={{ display: 'flex', gap: 12, alignItems: 'stretch' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: 28, flexShrink: 0 }}>
+                <div style={{ width: 28, height: 28, borderRadius: '50%', background: reviewSubmitted ? '#52c41a' : createStep >= 2 ? '#1890ff' : '#d9d9d9', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 'bold', flexShrink: 0 }}>
+                  {reviewSubmitted ? '✓' : '3'}
+                </div>
+                <div style={{ width: 2, flex: 1, minHeight: 16, background: reviewSubmitted ? '#52c41a' : createStep >= 2 ? '#1890ff' : '#d9d9d9' }} />
+              </div>
+              <div style={{ flex: 1, border: '1px solid #e8e8e8', borderRadius: 8, padding: 16, background: '#fff', marginBottom: createStep === 2 ? 0 : 4 }}>
+                <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 8, color: createStep >= 2 ? '#262626' : '#bfbfbf' }}>审核</div>
+                {createStep >= 2 ? (
+                  <div>
+                    <Alert message={reviewSubmitted ? '审核已提交' : '预检验完成'} type="success" showIcon style={{ marginBottom: 12 }} />
+                    <Descriptions column={1} size="small" bordered style={{ marginBottom: 12 }}>
+                      <Descriptions.Item label="实例">{form.getFieldValue('databaseId')}</Descriptions.Item>
+                      <Descriptions.Item label="目标Schema">{form.getFieldValue('databaseName')}</Descriptions.Item>
+                      <Descriptions.Item label="变更类型">{form.getFieldValue('changeType')}</Descriptions.Item>
+                      <Descriptions.Item label="录入影响行数"><b>{(() => { const v = form.getFieldValue('affectedRows'); return v != null && v !== '' ? `${Number(v).toLocaleString()} 行` : '-'; })()}</b></Descriptions.Item>
+                      <Descriptions.Item label="系统预估影响行数"><b style={{ color: (dmlCheckResult?.estimateAffectRows || 0) > 10000 ? '#ff4d4f' : '#52c41a' }}>{dmlCheckResult?.estimateAffectRows?.toLocaleString() || '-'} 行</b></Descriptions.Item>
+                      {(() => {
+                        const entered = form.getFieldValue('affectedRows');
+                        const estimated = dmlCheckResult?.estimateAffectRows;
+                        if (entered != null && entered !== '' && estimated != null && Number(entered) !== estimated) {
+                          return (
+                            <>
+                              <Descriptions.Item label={<span style={{ color: '#faad14' }}>⚠ 行数不一致</span>}>
+                                <span style={{ color: '#faad14', fontWeight: 500 }}>
+                                  您录入 {Number(entered).toLocaleString()} 行，系统预估 {estimated.toLocaleString()} 行，请核实！
+                                </span>
+                              </Descriptions.Item>
+                            </>
+                          );
+                        }
+                        return null;
+                      })()}
+                      <Descriptions.Item label="业务背景">{form.getFieldValue('description') || '-'}</Descriptions.Item>
+                      <Descriptions.Item label="SQL"><div style={{ maxHeight: 80, overflow: 'auto', fontSize: 12, fontFamily: 'monospace', whiteSpace: 'pre-wrap' }}>{form.getFieldValue('sqlContent') || '-'}</div></Descriptions.Item>
+                    </Descriptions>
+                    {reviewSubmitted && currentApprover && (
+                      <Alert
+                        message={
+                          <span>当前审核人：<Tag color="blue">{currentApprover}</Tag></span>
+                        }
+                        type="info"
+                        showIcon
+                        style={{ marginBottom: 12 }}
+                      />
+                    )}
+                    {!reviewSubmitted && (
+                      <Alert message="请确认变更信息无误后，点击「提交审核」进入审批流程" type="info" showIcon />
+                    )}
+                  </div>
+                ) : <span style={{ color: '#bfbfbf' }}>预检查通过后可提交审核</span>}
+                {createStep >= 2 && (
+                  <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 12, borderTop: '1px solid #f0f0f0', paddingTop: 12 }}>
+                    {!reviewSubmitted ? (
+                      <>
+                        <Button onClick={() => { setCreateStep(0); setDmlCheckResult(null); setCreatedTicketId(null); }}>返回修改</Button>
+                        <Button type="primary" loading={submittingReview} onClick={handleSubmitReview} icon={<SendOutlined />}>提交审核</Button>
+                      </>
+                    ) : (
+                      <Button type="primary" onClick={() => { closeCreate(); fetchTickets(); }}>完成</Button>
+                    )}
+                  </div>
+                )}
+              </div>
             </div>
-            <div style={{ flex: 1, border: '1px solid #e8e8e8', borderRadius: 8, padding: 12, background: '#fff' }}>
-              <div style={{ fontWeight: 600, fontSize: 14, color: '#bfbfbf' }}>完成</div>
-              <span style={{ color: '#bfbfbf' }}>执行成功后自动完成</span>
+
+            {/* ====== 步骤4：执行 ====== */}
+            <div style={{ display: 'flex', gap: 12, alignItems: 'stretch' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: 28, flexShrink: 0 }}>
+                <div style={{ width: 28, height: 28, borderRadius: '50%', background: '#d9d9d9', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 'bold', flexShrink: 0 }}>4</div>
+                <div style={{ width: 2, flex: 1, minHeight: 16, background: '#d9d9d9' }} />
+              </div>
+              <div style={{ flex: 1, border: '1px solid #e8e8e8', borderRadius: 8, padding: 12, background: '#fff' }}>
+                <div style={{ fontWeight: 600, fontSize: 14, color: '#bfbfbf' }}>执行</div>
+                <span style={{ color: '#bfbfbf' }}>工单审批通过后自动执行</span>
+              </div>
+            </div>
+
+            {/* ====== 步骤5：完成 ====== */}
+            <div style={{ display: 'flex', gap: 12, alignItems: 'stretch' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: 28, flexShrink: 0 }}>
+                <div style={{ width: 28, height: 28, borderRadius: '50%', background: '#d9d9d9', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 'bold', flexShrink: 0 }}>5</div>
+              </div>
+              <div style={{ flex: 1, border: '1px solid #e8e8e8', borderRadius: 8, padding: 12, background: '#fff' }}>
+                <div style={{ fontWeight: 600, fontSize: 14, color: '#bfbfbf' }}>完成</div>
+                <span style={{ color: '#bfbfbf' }}>执行成功后自动完成</span>
+              </div>
             </div>
           </div>
-        </div>
-      </Modal>
+        </Card>
+      )}
 
       {/* 工单详情弹窗 */}
       <Modal title={null} open={detailVisible} onCancel={() => { setDetailVisible(false); setTicketDetail(null); setApprovalRecords([]); }}
