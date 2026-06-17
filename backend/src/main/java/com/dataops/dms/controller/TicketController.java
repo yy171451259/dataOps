@@ -1,5 +1,6 @@
 package com.dataops.dms.controller;
 
+import com.dataops.dms.common.result.PageResult;
 import com.dataops.dms.common.result.Result;
 import com.dataops.dms.dto.TicketCreateDTO;
 import com.dataops.dms.entity.Ticket;
@@ -48,11 +49,11 @@ public class TicketController {
     @PostMapping("/check-lock-free-dml")
     @Operation(summary = "检测无锁数据变更需求")
     public Result<LockFreeDmlEngine.DmlCheckResult> checkLockFreeDml(@RequestBody Map<String, String> request) {
-        String databaseId = request.get("databaseId");
-        String databaseName = request.get("databaseName");
+        String instanceId = request.get("instanceId");
+        String schemaName = request.get("schemaName");
         String sql = request.get("sql");
         try {
-            LockFreeDmlEngine.DmlCheckResult result = ticketService.checkLockFreeDml(databaseId, databaseName, sql);
+            LockFreeDmlEngine.DmlCheckResult result = ticketService.checkLockFreeDml(instanceId, schemaName, sql);
             return Result.success(result);
         } catch (Exception e) {
             return Result.error(e.getMessage());
@@ -76,49 +77,52 @@ public class TicketController {
     }
 
     /**
-     * 获取所有工单
+     * 获取所有工单（分页）
      */
     @GetMapping
     @Operation(summary = "所有工单列表（支持筛选）")
-    public Result<List<Ticket>> getAllTickets(
+    public Result<PageResult<Ticket>> getAllTickets(
             @RequestParam(required = false) String changeType,
             @RequestParam(required = false) String status,
             @RequestParam(required = false) String keyword,
-            @RequestParam(required = false) String databaseId) {
-        if (changeType != null || status != null || keyword != null || databaseId != null) {
-            List<Ticket> tickets = ticketService.queryTickets(changeType, status, keyword, databaseId);
-            return Result.success(tickets);
-        }
-        List<Ticket> tickets = ticketService.getAllTickets();
-        return Result.success(tickets);
+            @RequestParam(required = false) String databaseId,
+            @RequestParam(defaultValue = "1") Integer page,
+            @RequestParam(defaultValue = "15") Integer size) {
+        PageResult<Ticket> pageResult = ticketService.queryTicketsPage(changeType, status, keyword, databaseId, page, size);
+        return Result.success(pageResult);
     }
 
     /**
-     * 获取我的待审批工单
+     * 获取我的待审批工单（分页）
      */
     @GetMapping("/pending")
     @Operation(summary = "我的待审批")
-    public Result<List<Ticket>> getMyPendingTickets(HttpServletRequest request) {
+    public Result<PageResult<Ticket>> getMyPendingTickets(HttpServletRequest request,
+            @RequestParam(defaultValue = "1") Integer page,
+            @RequestParam(defaultValue = "15") Integer size) {
         String approverId = (String) request.getAttribute("userId");
         if (approverId == null) {
             approverId = "user_admin";
         }
-        List<Ticket> tickets = ticketService.getMyPendingTickets(approverId);
-        return Result.success(tickets);
+        PageResult<Ticket> pageResult = ticketService.getMyPendingTicketsPage(approverId, page, size);
+        return Result.success(pageResult);
     }
 
     /**
-     * 获取我创建的工单
+     * 获取我创建的工单（分页）
      */
     @GetMapping("/my")
     @Operation(summary = "我创建的工单")
-    public Result<List<Ticket>> getMyCreatedTickets(HttpServletRequest request) {
+    public Result<PageResult<Ticket>> getMyCreatedTickets(HttpServletRequest request,
+            @RequestParam(required = false) String status,
+            @RequestParam(defaultValue = "1") Integer page,
+            @RequestParam(defaultValue = "15") Integer size) {
         String creatorId = (String) request.getAttribute("userId");
         if (creatorId == null) {
             creatorId = "user_admin";
         }
-        List<Ticket> tickets = ticketService.getMyCreatedTickets(creatorId);
-        return Result.success(tickets);
+        PageResult<Ticket> pageResult = ticketService.getMyCreatedTicketsPage(creatorId, status, page, size);
+        return Result.success(pageResult);
     }
 
     /**

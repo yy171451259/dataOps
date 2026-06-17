@@ -1,7 +1,10 @@
 package com.dataops.dms.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.metadata.IPage;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
+import com.dataops.dms.common.result.PageResult;
 import com.dataops.dms.entity.PermissionRequest;
 import com.dataops.dms.entity.UserPermission;
 import com.dataops.dms.mapper.PermissionRequestMapper;
@@ -207,6 +210,42 @@ public class PermissionRequestServiceImpl extends ServiceImpl<PermissionRequestM
         wrapper.eq(PermissionRequest::getApplicantId, applicantId)
                .orderByDesc(PermissionRequest::getCreatedAt);
         return this.list(wrapper);
+    }
+
+    @Override
+    public PageResult<PermissionRequest> getMyRequestsPage(String applicantId, String status, Integer page, Integer size) {
+        Integer pageNum = page == null || page <= 0 ? 1 : page;
+        Integer pageSize = size == null || size <= 0 ? 15 : (size > 200 ? 200 : size);
+
+        LambdaQueryWrapper<PermissionRequest> wrapper = new LambdaQueryWrapper<>();
+        wrapper.eq(PermissionRequest::getApplicantId, applicantId);
+        if (status != null && !status.isEmpty()) {
+            wrapper.eq(PermissionRequest::getStatus, status);
+        }
+        wrapper.orderByDesc(PermissionRequest::getCreatedAt);
+
+        Page<PermissionRequest> query = new Page<>(pageNum, pageSize);
+        IPage<PermissionRequest> result = this.page(query, wrapper);
+
+        return PageResult.of(pageNum, pageSize, result.getTotal(), result.getRecords());
+    }
+
+    @Override
+    public PageResult<PermissionRequest> getPendingRequestsPage(String approverId, Integer page, Integer size) {
+        Integer pageNum = page == null || page <= 0 ? 1 : page;
+        Integer pageSize = size == null || size <= 0 ? 15 : (size > 200 ? 200 : size);
+
+        LambdaQueryWrapper<PermissionRequest> wrapper = new LambdaQueryWrapper<>();
+        wrapper.eq(PermissionRequest::getStatus, "pending");
+        if (approverId != null && !approverId.isEmpty()) {
+            wrapper.eq(PermissionRequest::getApproverId, approverId);
+        }
+        wrapper.orderByDesc(PermissionRequest::getCreatedAt);
+
+        Page<PermissionRequest> query = new Page<>(pageNum, pageSize);
+        IPage<PermissionRequest> result = this.page(query, wrapper);
+
+        return PageResult.of(pageNum, pageSize, result.getTotal(), result.getRecords());
     }
 
     @Override

@@ -68,6 +68,9 @@ const PermissionRequestPage: React.FC = () => {
   // Tab 1: 我的申请
   const [myRequests, setMyRequests] = useState<PermissionRequest[]>([]);
   const [myLoading, setMyLoading] = useState(false);
+  const [myPage, setMyPage] = useState<number>(1);
+  const [mySize, setMySize] = useState<number>(15);
+  const [myTotal, setMyTotal] = useState<number>(0);
   const [statusFilter, setStatusFilter] = useState<string>('all');
 
   // Tab 2: 新建申请
@@ -112,17 +115,39 @@ const PermissionRequestPage: React.FC = () => {
     }
   };
 
-  const loadMyRequests = async () => {
+  const loadMyRequests = async (page?: number, size?: number) => {
     setMyLoading(true);
     try {
-      const res = await permissionRequestApi.my();
-      setMyRequests(Array.isArray(res?.data?.data) ? res.data.data : []);
+      const params: any = {
+        page: page || myPage,
+        size: size || mySize,
+      };
+      if (statusFilter && statusFilter !== 'all') {
+        params.status = statusFilter;
+      }
+      const res = await permissionRequestApi.my(params);
+      const data = res?.data?.data;
+      if (data && Array.isArray(data.list)) {
+        setMyRequests(data.list);
+        setMyTotal(Number(data.total) || 0);
+      } else if (Array.isArray(data)) {
+        setMyRequests(data);
+        setMyTotal(data.length);
+      } else {
+        setMyRequests([]);
+        setMyTotal(0);
+      }
     } catch {
       setMyRequests([]);
+      setMyTotal(0);
     } finally {
       setMyLoading(false);
     }
   };
+
+  useEffect(() => {
+    if (activeTab === 'my') loadMyRequests(1);
+  }, [activeTab, statusFilter]);
 
   const toggleInstance = async (id: string) => {
     const s = new Set(expandedInstances);
@@ -354,11 +379,21 @@ const PermissionRequestPage: React.FC = () => {
             />
           </div>
           <Table
-            dataSource={myRequests.filter((r: PermissionRequest) => statusFilter === 'all' ? true : r.status === statusFilter)}
+            dataSource={myRequests}
             columns={myColumns}
             rowKey="id"
             loading={myLoading}
-            pagination={{ pageSize: 15, showTotal: (t: number) => `共 ${t} 条申请` }}
+            pagination={{
+              current: myPage,
+              pageSize: mySize,
+              total: myTotal,
+              showTotal: (t: number) => `共 ${t} 条申请`,
+              onChange: (p: number, s: number) => {
+                setMyPage(p);
+                setMySize(s);
+                loadMyRequests(p, s);
+              },
+            }}
             scroll={{ x: 1850 }}
             size="small"
             locale={{ emptyText: <Empty description="暂无申请记录" /> }}

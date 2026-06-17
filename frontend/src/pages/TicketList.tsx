@@ -80,6 +80,9 @@ interface DmlCheckResult {
 const TicketList: React.FC = () => {
   const [tickets, setTickets] = useState<Ticket[]>([]);
   const [loading, setLoading] = useState(false);
+  const [page, setPage] = useState<number>(1);
+  const [size, setSize] = useState<number>(10);
+  const [total, setTotal] = useState<number>(0);
   const [modalVisible, setModalVisible] = useState(false);
   const [detailVisible, setDetailVisible] = useState(false);
   const [selectedTicket, setSelectedTicket] = useState<Ticket | null>(null);
@@ -105,15 +108,25 @@ const TicketList: React.FC = () => {
   useEffect(() => { fetchTickets(); fetchDatabases(); fetchUsers(); }, [tabKey]);
   useEffect(() => { fetchTickets(); }, [statusFilter]);
 
-  const fetchTickets = async () => {
+  const fetchTickets = async (p?: number, s?: number) => {
     setLoading(true);
     try {
-      const params: any = {};
+      const params: any = { page: p || page, size: s || size };
       if (statusFilter && statusFilter !== 'all') { params.status = statusFilter; }
       if (searchText.trim()) { params.keyword = searchText.trim(); }
       const res = await ticketApi.list(params);
-      setTickets(res.data.data || []);
-    } catch { message.error('OK'); }
+      const data = res.data?.data;
+      if (data && Array.isArray(data.list)) {
+        setTickets(data.list);
+        setTotal(Number(data.total) || 0);
+      } else if (Array.isArray(data)) {
+        setTickets(data);
+        setTotal(data.length);
+      } else {
+        setTickets([]);
+        setTotal(0);
+      }
+    } catch { message.error('加载失败'); }
     finally { setLoading(false); }
   };
 
@@ -308,7 +321,18 @@ const TicketList: React.FC = () => {
           </Row>
         </div>
         <Table columns={columns} dataSource={tickets} loading={loading} rowKey="id" scroll={{ x: 1100 }}
-          pagination={{ pageSize: 10, showTotal: t => `共 ${t} 条`, showSizeChanger: true }} />
+          pagination={{
+            current: page,
+            pageSize: size,
+            total,
+            showTotal: (t: number) => `共 ${t} 条`,
+            showSizeChanger: true,
+            onChange: (p: number, s: number) => {
+              setPage(p);
+              setSize(s);
+              fetchTickets(p, s);
+            },
+          }} />
       </Card>
 
       {/* 创建工单弹窗 */}
@@ -392,12 +416,12 @@ const TicketList: React.FC = () => {
                     <Option value="scheduled">定时执行</Option>
                   </Select>
                 </Form.Item>
-                <Form.Item name="affectedRows" label="影响行数"><Input type="number" placeholder="预估影响行数（可选）" addonAfter="行" /></Form.Item>
-                <Form.Item label="回滚SQL">
+                <Form.Item name="affectedRows" label="影响行数" rules={[{ required: true, message: '请填写影响行数' }]}><Input type="number" placeholder="预估影响行数（可选）" addonAfter="行" /></Form.Item>
+                {/*<Form.Item label="回滚SQL">
                   <div style={{ border: '1px solid #d9d9d9', borderRadius: 4 }}>
                     <Editor height="160px" defaultLanguage="sql" theme="vs" options={{ minimap: { enabled: false }, fontSize: 13 }} onChange={value => form.setFieldValue('rollbackSql', value || '')} />
                   </div>
-                </Form.Item>
+                </Form.Item>*/}
                 <Form.Item name="relatedPersons" label="变更相关人员">
                   <Select mode="multiple" placeholder="请输入用户昵称进行筛选" allowClear showSearch
                     filterOption={(input, option) => { const label = option?.label ?? option?.children; return String(label || '').toLowerCase().includes(input.toLowerCase()); }}
@@ -430,6 +454,21 @@ const TicketList: React.FC = () => {
                     <Row gutter={16} style={{ marginBottom: 8 }}>
                       <Col><span style={{ color: '#666' }}>预估影响总行数：</span><b style={{ color: dmlCheckResult.estimateAffectRows > 10000 ? '#ff4d4f' : '#52c41a' }}>{dmlCheckResult.estimateAffectRows.toLocaleString()} 行</b><span style={{ color: '#ff4d4f', marginLeft: 8 }}>（系统统计值，实际影响行数仍然以SQL执行为准!）</span></Col>
                     </Row>
+                    {(() => {
+                      const entered = form.getFieldValue('affectedRows');
+                      const estimated = dmlCheckResult.estimateAffectRows;
+                      if (entered != null && entered !== '' && estimated != null && Number(entered) !== estimated) {
+                        return (
+                          <Alert
+                            message={`您录入的影响行数（${Number(entered).toLocaleString()} 行）与系统预估行数（${estimated.toLocaleString()} 行）不一致，请核实后继续！`}
+                            type="warning"
+                            showIcon
+                            style={{ marginBottom: 8 }}
+                          />
+                        );
+                      }
+                      return null;
+                    })()}
                     {dmlCheckResult.tables && dmlCheckResult.tables.length > 1 && (
                       <Table size="small" dataSource={dmlCheckResult.tables.map((t, idx) => ({ ...t, key: idx }))} pagination={false} style={{ marginBottom: 12 }}
                         columns={[
@@ -476,7 +515,24 @@ const TicketList: React.FC = () => {
                     <Descriptions.Item label="实例">{form.getFieldValue('databaseId')}</Descriptions.Item>
                     <Descriptions.Item label="目标Schema">{form.getFieldValue('databaseName')}</Descriptions.Item>
                     <Descriptions.Item label="变更类型">{form.getFieldValue('changeType')}</Descriptions.Item>
-                    <Descriptions.Item label="预估影响行数"><b style={{ color: (dmlCheckResult?.estimateAffectRows || 0) > 10000 ? '#ff4d4f' : '#52c41a' }}>{dmlCheckResult?.estimateAffectRows?.toLocaleString() || '-'} 行</b></Descriptions.Item>
+                    <Descriptions.Item label="录入影响行数"><b>{(() => { const v = form.getFieldValue('affectedRows'); return v != null && v !== '' ? `${Number(v).toLocaleString()} 行` : '-'; })()}</b></Descriptions.Item>
+                    <Descriptions.Item label="系统预估影响行数"><b style={{ color: (dmlCheckResult?.estimateAffectRows || 0) > 10000 ? '#ff4d4f' : '#52c41a' }}>{dmlCheckResult?.estimateAffectRows?.toLocaleString() || '-'} 行</b></Descriptions.Item>
+                    {(() => {
+                      const entered = form.getFieldValue('affectedRows');
+                      const estimated = dmlCheckResult?.estimateAffectRows;
+                      if (entered != null && entered !== '' && estimated != null && Number(entered) !== estimated) {
+                        return (
+                          <>
+                            <Descriptions.Item label={<span style={{ color: '#faad14' }}>⚠ 行数不一致</span>}>
+                              <span style={{ color: '#faad14', fontWeight: 500 }}>
+                                您录入 {Number(entered).toLocaleString()} 行，系统预估 {estimated.toLocaleString()} 行，请核实！
+                              </span>
+                            </Descriptions.Item>
+                          </>
+                        );
+                      }
+                      return null;
+                    })()}
                     <Descriptions.Item label="业务背景">{form.getFieldValue('description') || '-'}</Descriptions.Item>
                     <Descriptions.Item label="SQL"><div style={{ maxHeight: 80, overflow: 'auto', fontSize: 12, fontFamily: 'monospace', whiteSpace: 'pre-wrap' }}>{form.getFieldValue('sqlContent') || '-'}</div></Descriptions.Item>
                   </Descriptions>

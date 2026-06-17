@@ -55,8 +55,10 @@ const ProtectedLayout: React.FC = () => {
           ticketApi.pending().catch(() => ({ data: { data: [] } })),
           permissionRequestApi.pending().catch(() => ({ data: { data: [] } })),
         ]);
-        const tCount = Array.isArray(ticketRes.data?.data) ? ticketRes.data.data.length : 0;
-        const pCount = Array.isArray(permRes.data?.data) ? permRes.data.data.length : 0;
+        const tData = ticketRes.data?.data;
+        const pData = permRes.data?.data;
+        const tCount = Array.isArray(tData) ? tData.length : (tData?.records?.length || 0);
+        const pCount = Array.isArray(pData) ? pData.length : (pData?.records?.length || 0);
         setPendingCount(tCount + pCount);
       } catch { /* ignore */ }
     };

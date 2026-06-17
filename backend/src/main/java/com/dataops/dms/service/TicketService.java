@@ -1,6 +1,7 @@
 package com.dataops.dms.service;
 
 import com.baomidou.mybatisplus.extension.service.IService;
+import com.dataops.dms.common.result.PageResult;
 import com.dataops.dms.dto.TicketCreateDTO;
 import com.dataops.dms.entity.Ticket;
 import com.dataops.dms.sql.LockFreeDmlEngine;
@@ -22,12 +23,12 @@ public interface TicketService extends IService<Ticket> {
     /**
      * 检测SQL是否需要无锁数据变更（DML）
      */
-    LockFreeDmlEngine.DmlCheckResult checkLockFreeDml(String databaseId, String databaseName, String sql) throws Exception;
+    LockFreeDmlEngine.DmlCheckResult checkLockFreeDml(String instanceId, String schemaName, String sql) throws Exception;
 
     /**
      * 检测SQL是否需要无锁结构变更（DDL）
      */
-    OnlineDdlEngine.DdlCheckResult checkOnlineDdl(String databaseId, String databaseName, String sql) throws Exception;
+    OnlineDdlEngine.DdlCheckResult checkOnlineDdl(String instanceId, String schemaName, String sql) throws Exception;
 
     /**
      * 审批工单
@@ -50,9 +51,19 @@ public interface TicketService extends IService<Ticket> {
     List<Ticket> getMyPendingTickets(String approverId);
 
     /**
+     * 分页获取我的待审批工单
+     */
+    PageResult<Ticket> getMyPendingTicketsPage(String approverId, Integer page, Integer size);
+
+    /**
      * 获取我创建的工单
      */
     List<Ticket> getMyCreatedTickets(String creatorId);
+
+    /**
+     * 分页获取我创建的工单
+     */
+    PageResult<Ticket> getMyCreatedTicketsPage(String creatorId, String status, Integer page, Integer size);
 
     /**
      * 获取工单详情
@@ -63,6 +74,11 @@ public interface TicketService extends IService<Ticket> {
      * 获取所有工单列表
      */
     List<Ticket> getAllTickets();
+
+    /**
+     * 分页查询工单列表
+     */
+    PageResult<Ticket> queryTicketsPage(String changeType, String status, String keyword, String databaseId, Integer page, Integer size);
 
     /**
      * 按条件查询工单

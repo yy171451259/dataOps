@@ -1,7 +1,10 @@
 package com.dataops.dms.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.metadata.IPage;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
+import com.dataops.dms.common.result.PageResult;
 import com.dataops.dms.dto.TicketCreateDTO;
 import com.dataops.dms.entity.DataChangeBackup;
 import com.dataops.dms.entity.DatabaseInstance;
@@ -777,11 +780,42 @@ public class TicketServiceImpl extends ServiceImpl<TicketMapper, Ticket> impleme
     }
 
     @Override
+    public PageResult<Ticket> getMyPendingTicketsPage(String approverId, Integer page, Integer size) {
+        Integer pageNum = page == null || page <= 0 ? 1 : page;
+        Integer pageSize = size == null || size <= 0 ? 15 : (size > 200 ? 200 : size);
+
+        LambdaQueryWrapper<Ticket> wrapper = new LambdaQueryWrapper<>();
+        wrapper.eq(Ticket::getStatus, "pending")
+               .orderByDesc(Ticket::getCreateTime);
+
+        Page<Ticket> query = new Page<>(pageNum, pageSize);
+        IPage<Ticket> result = this.page(query, wrapper);
+        return PageResult.of(pageNum, pageSize, result.getTotal(), result.getRecords());
+    }
+
+    @Override
     public List<Ticket> getMyCreatedTickets(String creatorId) {
         LambdaQueryWrapper<Ticket> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(Ticket::getCreatorId, creatorId)
                .orderByDesc(Ticket::getCreateTime);
         return this.list(wrapper);
+    }
+
+    @Override
+    public PageResult<Ticket> getMyCreatedTicketsPage(String creatorId, String status, Integer page, Integer size) {
+        Integer pageNum = page == null || page <= 0 ? 1 : page;
+        Integer pageSize = size == null || size <= 0 ? 15 : (size > 200 ? 200 : size);
+
+        LambdaQueryWrapper<Ticket> wrapper = new LambdaQueryWrapper<>();
+        wrapper.eq(Ticket::getCreatorId, creatorId);
+        if (status != null && !status.isEmpty()) {
+            wrapper.eq(Ticket::getStatus, status);
+        }
+        wrapper.orderByDesc(Ticket::getCreateTime);
+
+        Page<Ticket> query = new Page<>(pageNum, pageSize);
+        IPage<Ticket> result = this.page(query, wrapper);
+        return PageResult.of(pageNum, pageSize, result.getTotal(), result.getRecords());
     }
 
     @Override
@@ -817,6 +851,39 @@ public class TicketServiceImpl extends ServiceImpl<TicketMapper, Ticket> impleme
         }
         wrapper.orderByDesc(Ticket::getCreateTime);
         return this.list(wrapper);
+    }
+
+    @Override
+    public PageResult<Ticket> queryTicketsPage(String changeType, String status, String keyword, String instanceId, Integer page, Integer size) {
+        Integer pageNum = page == null || page <= 0 ? 1 : page;
+        Integer pageSize = size == null || size <= 0 ? 15 : (size > 200 ? 200 : size);
+
+        LambdaQueryWrapper<Ticket> wrapper = new LambdaQueryWrapper<>();
+        if (changeType != null && !changeType.isEmpty()) {
+            wrapper.eq(Ticket::getChangeType, changeType);
+        }
+        if (status != null && !status.isEmpty()) {
+            String[] statuses = status.split(",");
+            if (statuses.length == 1) {
+                wrapper.eq(Ticket::getStatus, status);
+            } else {
+                wrapper.in(Ticket::getStatus, (Object[]) statuses);
+            }
+        }
+        if (instanceId != null && !instanceId.isEmpty()) {
+            wrapper.eq(Ticket::getInstanceId, instanceId);
+        }
+        if (keyword != null && !keyword.isEmpty()) {
+            wrapper.and(w -> w.like(Ticket::getTitle, keyword)
+                    .or().like(Ticket::getDescription, keyword)
+                    .or().like(Ticket::getId, keyword)
+                    .or().like(Ticket::getCreatorId, keyword));
+        }
+        wrapper.orderByDesc(Ticket::getCreateTime);
+
+        Page<Ticket> query = new Page<>(pageNum, pageSize);
+        IPage<Ticket> result = this.page(query, wrapper);
+        return PageResult.of(pageNum, pageSize, result.getTotal(), result.getRecords());
     }
 
     @Override

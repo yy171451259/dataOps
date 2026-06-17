@@ -1,6 +1,9 @@
 package com.dataops.dms.controller;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.metadata.IPage;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.dataops.dms.common.result.PageResult;
 import com.dataops.dms.common.result.Result;
 import com.dataops.dms.dto.ApproveRequestDTO;
 import com.dataops.dms.dto.PermissionTicketDTO;
@@ -13,6 +16,7 @@ import org.springframework.web.bind.annotation.*;
 
 import javax.annotation.Resource;
 import javax.servlet.http.HttpServletRequest;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
@@ -82,48 +86,39 @@ public class PermissionRequestController {
     // ==================== 我的 / 待审批 ====================
 
     @GetMapping("/pending")
-    @Operation(summary = "获取待审批列表（仅显示当前用户作为审批人的工单）")
-    public Result<List<PermissionRequest>> getPending(HttpServletRequest request) {
+    @Operation(summary = "获取待审批列表（分页）")
+    public Result<PageResult<PermissionRequest>> getPending(
+            HttpServletRequest request,
+            @RequestParam(defaultValue = "1") Integer page,
+            @RequestParam(defaultValue = "15") Integer size) {
         String userId = (String) request.getAttribute("userId");
         Boolean isAdmin = (Boolean) request.getAttribute("isAdmin");
         if (userId == null) userId = "user_admin";
 
         // 管理员可以看到所有待审批工单，普通用户只看到自己作为审批人的工单
-        List<PermissionRequest> list = requestService.getPendingRequests(userId);
-        // 若当前用户是资源 Owner 但未在 approver 中，也应该能看到（通过 Service 层已处理）
-        // 同时管理员可额外看到未指定审批人的工单
-        if (Boolean.TRUE.equals(isAdmin)) {
-            List<PermissionRequest> unassigned = requestService.getUnassignedPendingRequests();
-            if (unassigned != null && !unassigned.isEmpty()) {
-                java.util.Set<String> seenIds = new java.util.HashSet<>();
-                java.util.List<PermissionRequest> merged = new java.util.ArrayList<>();
-                for (PermissionRequest r : list) {
-                    if (seenIds.add(r.getId())) merged.add(r);
-                }
-                for (PermissionRequest r : unassigned) {
-                    if (seenIds.add(r.getId())) merged.add(r);
-                }
-                // 按创建时间倒序
-                merged.sort((a, b) -> {
-                    if (a.getCreatedAt() == null) return 1;
-                    if (b.getCreatedAt() == null) return -1;
-                    return b.getCreatedAt().compareTo(a.getCreatedAt());
-                });
-                list = merged;
-            }
+        PageResult<PermissionRequest> pageResult =
+                requestService.getPendingRequestsPage(Boolean.TRUE.equals(isAdmin) ? null : userId, page, size);
+        if (pageResult.getList() != null) {
+            // 若当前用户是资源 Owner 但未在 approver 中，也应该能看到（通过 Service 层已处理）
+            enrichWithNickname(pageResult.getList());
         }
-        enrichWithNickname(list);
-        return Result.success(list);
+        return Result.success(pageResult);
     }
 
     @GetMapping("/my")
-    @Operation(summary = "获取我的申请")
-    public Result<List<PermissionRequest>> getMy(HttpServletRequest request) {
+    @Operation(summary = "获取我的申请（分页）")
+    public Result<PageResult<PermissionRequest>> getMy(
+            HttpServletRequest request,
+            @RequestParam(required = false) String status,
+            @RequestParam(defaultValue = "1") Integer page,
+            @RequestParam(defaultValue = "15") Integer size) {
         String userId = (String) request.getAttribute("userId");
         if (userId == null) userId = "user_admin";
-        List<PermissionRequest> list = requestService.getMyRequests(userId);
-        enrichWithNickname(list);
-        return Result.success(list);
+        PageResult<PermissionRequest> pageResult = requestService.getMyRequestsPage(userId, status, page, size);
+        if (pageResult.getList() != null) {
+            enrichWithNickname(pageResult.getList());
+        }
+        return Result.success(pageResult);
     }
 
     // ==================== 工单详情 ====================

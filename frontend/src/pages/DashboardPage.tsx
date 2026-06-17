@@ -37,8 +37,14 @@ const DashboardPage: React.FC = () => {
         permissionRequestApi.pending().catch(() => ({ data: { data: [] } })),
       ]);
 
-      const tickets = Array.isArray(pendingTicketRes.data?.data) ? pendingTicketRes.data.data : [];
-      const permissions = Array.isArray(permRes.data?.data) ? permRes.data.data : [];
+      const tickets = (() => {
+        const data = pendingTicketRes.data?.data;
+        return Array.isArray(data) ? data : data?.records || [];
+      })();
+      const permissions = (() => {
+        const data = permRes.data?.data;
+        return Array.isArray(data) ? data : data?.records || [];
+      })();
 
       const merged = [
         ...tickets.map((t: any) => ({
