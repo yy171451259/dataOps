@@ -172,7 +172,7 @@ export const maskingApi = {
 
 // ============ 元数据 ============
 export const metadataApi = {
-  collect: (instanceId: string, schemaName?: string) => api.post(`/metadata/collect/${instanceId}`, { schemaName }),
+  collect: (instanceId: string, databaseName?: string) => api.post(`/metadata/collect/${instanceId}`, { databaseName }),
   listTables: (params?: any) => api.get('/metadata/tables', { params }),
   getTable: (id: string) => api.get(`/metadata/tables/${id}`),
   updateTable: (id: string, params: any) => api.put(`/metadata/tables/${id}`, null, { params }),
