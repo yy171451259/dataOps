@@ -179,6 +179,10 @@ public class TicketServiceImpl extends ServiceImpl<TicketMapper, Ticket> impleme
         ticket.setExecutionTimeoutSeconds(dto.getExecutionTimeoutSeconds() != null ? dto.getExecutionTimeoutSeconds() : 600);
         ticket.setApprovalDeadline(approvalDeadline);
         ticket.setApprovedLevel(0);
+        // 执行方式：默认自动执行
+        ticket.setExecMode(dto.getExecMode() != null ? dto.getExecMode() : "auto");
+        // 原因类别
+        ticket.setReasonType(dto.getReasonType());
         
         ticket.setCreateTime(LocalDateTime.now());
         
@@ -409,27 +413,39 @@ public class TicketServiceImpl extends ServiceImpl<TicketMapper, Ticket> impleme
 
         // 3. Update ticket status and execute
         if (approved) {
-            ticket.setStatus("executing");
-            ticket.setCurrentApproverId(approverId);
-            ticket.setUpdateTime(LocalDateTime.now());
-            this.updateById(ticket);
+            String execMode = ticket.getExecMode() != null ? ticket.getExecMode() : "auto";
             
-            // 4. Execute SQL with timeout protection
-            try {
-                executeTicketSql(ticket, approverId);
-                ticket.setStatus("done");
-                ticket.setExecuteTime(LocalDateTime.now());
-                ticket.setDdlProgress(100);
-                ticket.setDmlProgressPercent(100);
-                this.updateById(ticket);
-                log.info("工单审批通过并执行成功: {}", ticketId);
-            } catch (Exception e) {
-                ticket.setStatus("failed");
-                ticket.setErrorMsg(e.getMessage());
+            if ("manual".equals(execMode)) {
+                // 手动执行：审批通过后状态改为 approved，等待提交者手动执行
+                ticket.setStatus("approved");
+                ticket.setCurrentApproverId(approverId);
                 ticket.setUpdateTime(LocalDateTime.now());
                 this.updateById(ticket);
-                log.error("工单执行失败: {}, 错误: {}", ticketId, e.getMessage(), e);
-                throw new RuntimeException("执行失败: " + e.getMessage());
+                log.info("工单审批通过（待提交者手动执行）: {}", ticketId);
+            } else {
+                // 自动执行：现有逻辑，审批通过后自动执行 SQL
+                ticket.setStatus("executing");
+                ticket.setCurrentApproverId(approverId);
+                ticket.setUpdateTime(LocalDateTime.now());
+                this.updateById(ticket);
+                
+                // 4. Execute SQL with timeout protection
+                try {
+                    executeTicketSql(ticket, approverId);
+                    ticket.setStatus("done");
+                    ticket.setExecuteTime(LocalDateTime.now());
+                    ticket.setDdlProgress(100);
+                    ticket.setDmlProgressPercent(100);
+                    this.updateById(ticket);
+                    log.info("工单审批通过并执行成功: {}", ticketId);
+                } catch (Exception e) {
+                    ticket.setStatus("failed");
+                    ticket.setErrorMsg(e.getMessage());
+                    ticket.setUpdateTime(LocalDateTime.now());
+                    this.updateById(ticket);
+                    log.error("工单执行失败: {}, 错误: {}", ticketId, e.getMessage(), e);
+                    throw new RuntimeException("执行失败: " + e.getMessage());
+                }
             }
         } else {
             ticket.setStatus("rejected");
@@ -438,6 +454,43 @@ public class TicketServiceImpl extends ServiceImpl<TicketMapper, Ticket> impleme
             log.info("工单审批拒绝: {}, 审批人: {}", ticketId, approverId);
         }
         
+        return true;
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public boolean executeTicket(String ticketId, String operatorId) {
+        Ticket ticket = this.getById(ticketId);
+        if (ticket == null) {
+            throw new RuntimeException("工单不存在");
+        }
+        if (!"approved".equals(ticket.getStatus())) {
+            throw new RuntimeException("当前工单状态不允许手动执行: " + ticket.getStatus());
+        }
+        if (!"manual".equals(ticket.getExecMode())) {
+            throw new RuntimeException("该工单执行方式为自动执行，不支持手动触发");
+        }
+
+        ticket.setStatus("executing");
+        ticket.setUpdateTime(LocalDateTime.now());
+        this.updateById(ticket);
+
+        try {
+            executeTicketSql(ticket, operatorId);
+            ticket.setStatus("done");
+            ticket.setExecuteTime(LocalDateTime.now());
+            ticket.setDdlProgress(100);
+            ticket.setDmlProgressPercent(100);
+            this.updateById(ticket);
+            log.info("工单手动执行成功: {}", ticketId);
+        } catch (Exception e) {
+            ticket.setStatus("failed");
+            ticket.setErrorMsg(e.getMessage());
+            ticket.setUpdateTime(LocalDateTime.now());
+            this.updateById(ticket);
+            log.error("工单手动执行失败: {}, 错误: {}", ticketId, e.getMessage(), e);
+            throw new RuntimeException("执行失败: " + e.getMessage());
+        }
         return true;
     }
 

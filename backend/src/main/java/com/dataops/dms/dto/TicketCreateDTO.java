@@ -109,4 +109,14 @@ public class TicketCreateDTO {
      * 审批超时小时数（创建后N小时未审批自动拒绝），0表示不超时
      */
     private Integer approvalTimeoutHours = 0;
+
+    /**
+     * 执行方式: auto（审批通过后自动执行）, manual（审批通过后由提交者手动执行）
+     */
+    private String execMode = "auto";
+
+    /**
+     * 原因类型: config_fix, init_data, bug_fix, no_backend_feature, data_cleanup, test, misoperation, other
+     */
+    private String reasonType;
 }

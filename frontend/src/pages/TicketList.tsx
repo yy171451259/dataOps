@@ -46,6 +46,7 @@ interface Ticket {
   dmlProgressPercent?: number;
   dmlTotalBatches?: number;
   dmlStatus?: string;
+  execMode?: string;
 }
 
 interface TableCheckItem {
@@ -451,6 +452,18 @@ const TicketList: React.FC = () => {
     }
   };
 
+  const handleManualExecute = async (ticket: Ticket) => {
+    try {
+      await ticketApi.execute(ticket.id);
+      message.success('执行成功');
+      fetchTickets();
+      const refreshed = await ticketApi.get(ticket.id);
+      setViewingTicket(refreshed.data?.data || refreshed.data);
+    } catch (e: any) {
+      message.error(e?.response?.data?.message || '执行失败');
+    }
+  };
+
   const closeCreate = () => {
     form.resetFields(); setDmlCheckResult(null);
     setUseLockFree(false); setBatchSize(1000); setBatchInterval(100);
@@ -499,9 +512,19 @@ const TicketList: React.FC = () => {
       {activeTab === 'create' && (() => {
         const isViewing = !!viewingTicket;
         return (
-        <Card
-          title={isViewing ? `工单详情 - ${viewingTicket?.id || ''}` : '新建数据变更工单'}
-          extra={(
+        <div>
+          {/* 顶部悬浮栏 */}
+          <div style={{
+            position: 'sticky', top: 0, zIndex: 100,
+            background: '#fff', padding: '12px 24px',
+            borderBottom: '1px solid #f0f0f0',
+            display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+            marginBottom: 16, borderRadius: '8px 8px 0 0',
+            boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
+          }}>
+            <h3 style={{ margin: 0, fontSize: 16, fontWeight: 600 }}>
+              {isViewing ? `工单详情 - ${viewingTicket?.id || ''}` : '新建数据变更工单'}
+            </h3>
             <Space>
               {isViewing && ['pending','approving'].includes(viewingTicket?.status || '') && (
                 <Popconfirm title="确认关闭此工单？" onConfirm={() => viewTicketAction('cancel')}>
@@ -510,9 +533,8 @@ const TicketList: React.FC = () => {
               )}
               <Button icon={<ArrowLeftOutlined />} onClick={closeCreate}>返回列表</Button>
             </Space>
-          )}
-          style={{ maxWidth: '100%' }}
-        >
+          </div>
+        <Card style={{ maxWidth: '100%', borderRadius: '0 0 8px 8px' }}>
           <div style={{ display: 'flex', flexDirection: 'column' }}>
             {/* ====== 步骤1：申请 / 基本信息 ====== */}
             <div style={{ display: 'flex', gap: 12, alignItems: 'stretch' }}>
@@ -570,7 +592,7 @@ const TicketList: React.FC = () => {
                       </Descriptions.Item>
                       <Descriptions.Item label="执行方式">
                         {(() => {
-                          const m: Record<string,string> = { auto_after_approve:'审批通过后自动执行', manual_after_approve:'审批通过后手动执行', scheduled:'定时执行' };
+                          const m: Record<string,string> = { auto:'审批通过后，自动执行', manual:'审批通过后，提交者执行' };
                           return m[form.getFieldValue('execMode') || ''] || form.getFieldValue('execMode') || '-';
                         })()}
                       </Descriptions.Item>
@@ -670,11 +692,10 @@ const TicketList: React.FC = () => {
                   <Form.Item name="description" label="业务背景" rules={[{ required: true, message: '请填写业务背景' }]}>
                     <TextArea rows={4} placeholder="为了减少沟通成本，请在这里认真填写业务背景" />
                   </Form.Item>
-                  <Form.Item name="execMode" label="执行方式" initialValue="auto_after_approve" rules={[{ required: true, message: '请选择执行方式' }]}>
+                  <Form.Item name="execMode" label="执行方式" initialValue="auto" rules={[{ required: true, message: '请选择执行方式' }]}>
                     <Select placeholder="请选择执行方式">
-                      <Option value="auto_after_approve">审批通过后自动执行</Option>
-                      <Option value="manual_after_approve">审批通过后手动执行</Option>
-                      <Option value="scheduled">定时执行</Option>
+                      <Option value="auto">审批通过后，自动执行</Option>
+                      <Option value="manual">审批通过后，提交者执行</Option>
                     </Select>
                   </Form.Item>
                   <Form.Item name="affectedRows" label="影响行数" rules={[{ required: true, message: '请填写影响行数' }]}><Input type="number" placeholder="预估影响行数（可选）" addonAfter="行" /></Form.Item>
@@ -764,9 +785,9 @@ const TicketList: React.FC = () => {
                 <div style={{ width: 28, height: 28, borderRadius: '50%', background: isViewing ? (viewingTicket?.status === 'rejected' ? '#ff4d4f' : '#52c41a') : (reviewSubmitted ? '#52c41a' : createStep >= 2 ? '#1890ff' : '#d9d9d9'), color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 'bold', flexShrink: 0 }}>
                   {isViewing ? (viewingTicket?.status === 'rejected' ? '✗' : '✓') : (reviewSubmitted ? '✓' : '3')}
                 </div>
-                <div style={{ width: 2, flex: 1, minHeight: 16, background: isViewing ? (['executing','done','failed','rolled_back'].includes(viewingTicket?.status || '') ? '#52c41a' : '#d9d9d9') : (reviewSubmitted ? '#52c41a' : createStep >= 2 ? '#1890ff' : '#d9d9d9') }} />
+                <div style={{ width: 2, flex: 1, minHeight: 16, background: isViewing ? (['approved','executing','done','failed','rolled_back'].includes(viewingTicket?.status || '') ? '#52c41a' : '#d9d9d9') : (reviewSubmitted ? '#52c41a' : createStep >= 2 ? '#1890ff' : '#d9d9d9') }} />
               </div>
-              <div style={{ flex: 1, border: '1px solid #e8e8e8', borderRadius: 8, padding: 16, background: '#fff', marginBottom: (isViewing && ['executing','done','failed','rolled_back'].includes(viewingTicket?.status || '')) ? 4 : (createStep >= 3) ? 4 : 0 }}>
+              <div style={{ flex: 1, border: '1px solid #e8e8e8', borderRadius: 8, padding: 16, background: '#fff', marginBottom: (isViewing && ['approved','executing','done','failed','rolled_back'].includes(viewingTicket?.status || '')) ? 4 : (createStep >= 3) ? 4 : 0 }}>
                 <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 8, color: (isViewing || createStep >= 2) ? '#262626' : '#bfbfbf' }}>审核</div>
                 {(isViewing || createStep >= 2) ? (
                   <div>
@@ -835,14 +856,20 @@ const TicketList: React.FC = () => {
             {/* ====== 步骤4：执行 ====== */}
             <div style={{ display: 'flex', gap: 12, alignItems: 'stretch' }}>
               <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: 28, flexShrink: 0 }}>
-                <div style={{ width: 28, height: 28, borderRadius: '50%', background: (isViewing && ['executing','done','failed','rolled_back'].includes(viewingTicket?.status || '')) ? (viewingTicket?.status === 'failed' ? '#ff4d4f' : viewingTicket?.status === 'done' ? '#52c41a' : '#1890ff') : '#d9d9d9', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 'bold', flexShrink: 0 }}>
-                  {(isViewing && ['executing','done','failed','rolled_back'].includes(viewingTicket?.status || '')) ? (viewingTicket?.status === 'failed' ? '✗' : viewingTicket?.status === 'done' ? '✓' : '4') : '4'}
+                <div style={{ width: 28, height: 28, borderRadius: '50%', background: (isViewing && ['executing','done','failed','rolled_back'].includes(viewingTicket?.status || '')) ? (viewingTicket?.status === 'failed' ? '#ff4d4f' : viewingTicket?.status === 'done' ? '#52c41a' : '#1890ff') : (isViewing && viewingTicket?.status === 'approved' && viewingTicket?.execMode === 'manual') ? '#faad14' : '#d9d9d9', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 'bold', flexShrink: 0 }}>
+                  {(isViewing && ['executing','done','failed','rolled_back'].includes(viewingTicket?.status || '')) ? (viewingTicket?.status === 'failed' ? '✗' : viewingTicket?.status === 'done' ? '✓' : '4') : (isViewing && viewingTicket?.status === 'approved' && viewingTicket?.execMode === 'manual') ? '!' : '4'}
                 </div>
                 <div style={{ width: 2, flex: 1, minHeight: 16, background: (isViewing && ['done','failed','rolled_back'].includes(viewingTicket?.status || '')) ? '#52c41a' : '#d9d9d9' }} />
               </div>
               <div style={{ flex: 1, border: '1px solid #e8e8e8', borderRadius: 8, padding: 16, background: '#fff' }}>
-                <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 8, color: (isViewing && ['executing','done','failed','rolled_back'].includes(viewingTicket?.status || '')) ? '#262626' : '#bfbfbf' }}>执行</div>
-                {(isViewing && ['executing','done','failed','rolled_back'].includes(viewingTicket?.status || '')) ? (
+                <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 8, color: (isViewing && ['executing','done','failed','rolled_back'].includes(viewingTicket?.status || '')) ? '#262626' : (isViewing && viewingTicket?.status === 'approved') ? '#262626' : '#bfbfbf' }}>执行</div>
+                {/* 手动执行：审批通过后等待提交者手动触发 */}
+                {(isViewing && viewingTicket?.status === 'approved' && viewingTicket?.execMode === 'manual') ? (
+                  <div>
+                    <Alert message="审批已通过，请手动执行SQL变更" type="warning" showIcon style={{ marginBottom: 12 }} />
+                    <Button type="primary" icon={<SendOutlined />} onClick={() => handleManualExecute(viewingTicket)}>手动执行</Button>
+                  </div>
+                ) : (isViewing && ['executing','done','failed','rolled_back'].includes(viewingTicket?.status || '')) ? (
                   <div>
                     {viewingTicket?.useLockFreeDml && viewingTicket?.dmlProgressPercent !== undefined ? (
                       <Row gutter={16}>
@@ -889,6 +916,7 @@ const TicketList: React.FC = () => {
             </div>
           </div>
         </Card>
+        </div>
         );
       })()}
     </div>

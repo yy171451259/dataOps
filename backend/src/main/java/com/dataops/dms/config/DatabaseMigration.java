@@ -85,25 +85,7 @@ public class DatabaseMigration implements CommandLineRunner {
                 ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='角色权限关联表'");
 
             // 创建权限审计日志表
-            createTableIfNotExists(conn, "sys_permission_audit_log",
-                "CREATE TABLE sys_permission_audit_log (" +
-                " id VARCHAR(64) NOT NULL COMMENT '主键ID'," +
-                " operation VARCHAR(32) NOT NULL COMMENT '操作: GRANT/REVOKE/ROLE_ASSIGN/CLEANUP'," +
-                " target_type VARCHAR(32) COMMENT '目标类型: USER/ROLE'," +
-                " target_id VARCHAR(64) COMMENT '目标ID'," +
-                " resource_type VARCHAR(32) COMMENT '资源类型'," +
-                " resource_id VARCHAR(128) COMMENT '资源ID'," +
-                " action VARCHAR(64) COMMENT '操作'," +
-                " detail TEXT COMMENT '详情JSON'," +
-                " operator_id VARCHAR(64) COMMENT '操作人ID'," +
-                " operator_name VARCHAR(128) COMMENT '操作人名称'," +
-                " ip_address VARCHAR(64) COMMENT 'IP地址'," +
-                " create_time DATETIME COMMENT '操作时间'," +
-                " PRIMARY KEY (id)," +
-                " KEY idx_target (target_type, target_id)," +
-                " KEY idx_operator (operator_id)," +
-                " KEY idx_create_time (create_time)" +
-                ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='权限操作审计日志'");
+            dropTableIfExists(conn, "sys_permission_audit_log");
 
             // sys_role 表补字段
             addColumnIfNotExists(conn, "sys_role", "is_system", "TINYINT DEFAULT 0 COMMENT '是否系统内置'");
@@ -397,6 +379,19 @@ public class DatabaseMigration implements CommandLineRunner {
         }
     }
 
+    private void dropTableIfExists(Connection conn, String tableName) {
+        try {
+            if (tableExists(conn, tableName)) {
+                try (Statement stmt = conn.createStatement()) {
+                    stmt.execute("DROP TABLE " + tableName);
+                    log.info("Migration: Dropped table {}", tableName);
+                }
+            }
+        } catch (Exception e) {
+            log.warn("Failed to drop table {}: {}", tableName, e.getMessage());
+        }
+    }
+
     private void seedDefaultRoles(Connection conn) {
         try {
             try (Statement stmt = conn.createStatement();
@@ -571,8 +566,7 @@ public class DatabaseMigration implements CommandLineRunner {
                 {"menu_monitor", null, "性能监控", "menu", "/monitor", null, "LineChartOutlined", null, "6", "1", "active"},
                 {"menu_metadata", null, "元数据管理", "menu", "/metadata", null, "TableOutlined", null, "7", "1", "active"},
                 {"menu_tickets", null, "数据变更", "menu", "/tickets", null, "CheckSquareOutlined", null, "8", "1", "active"},
-                {"menu_audit", null, "审计日志", "menu", "/audit", null, "AuditOutlined", null, "9", "1", "active"},
-                {"menu_perm_requests", null, "权限申请", "menu", "/permission-requests", null, "SendOutlined", null, "10", "1", "active"},
+                {"menu_perm_requests", null, "权限申请", "menu", "/permission-requests", null, "SendOutlined", null, "9", "1", "active"},
                 // 安全管理分组
                 {"menu_security_group", null, "安全管理", "menu", null, null, "SafetyOutlined", null, "30", "1", "active"},
                 {"menu_resource_owners", "menu_security_group", "资源Owner", "menu", "/resource-owners", null, "CrownOutlined", null, "1", "1", "active"},
@@ -611,14 +605,14 @@ public class DatabaseMigration implements CommandLineRunner {
             }
             // admin 拥有所有菜单
             String[] allMenuIds = {"menu_dashboard","menu_sql","menu_databases","menu_schema",
-                "menu_import","menu_monitor","menu_metadata","menu_tickets","menu_audit",
+                "menu_import","menu_monitor","menu_metadata","menu_tickets",
                 "menu_perm_requests",
                 "menu_security_group","menu_resource_owners","menu_sensitive","menu_row_controls",
                 "menu_system_group","menu_users","menu_roles","menu_notifications","menu_settings","menu_menu_manage"};
             
             // dba 菜单（无用户管理/系统设置/菜单管理）
             String[] dbaMenuIds = {"menu_dashboard","menu_sql","menu_databases","menu_schema",
-                "menu_import","menu_monitor","menu_metadata","menu_tickets","menu_audit",
+                "menu_import","menu_monitor","menu_metadata","menu_tickets",
                 "menu_perm_requests",
                 "menu_security_group","menu_resource_owners","menu_sensitive","menu_row_controls"};
             
@@ -629,11 +623,11 @@ public class DatabaseMigration implements CommandLineRunner {
             
             // viewer 菜单（只读）
             String[] viewerMenuIds = {"menu_dashboard","menu_sql","menu_databases",
-                "menu_monitor","menu_audit"};
+                "menu_monitor"};
             
             // approver 菜单
             String[] approverMenuIds = {"menu_dashboard","menu_sql","menu_databases",
-                "menu_tickets","menu_audit","menu_monitor"};
+                "menu_tickets","menu_monitor"};
 
             try (Statement stmt = conn.createStatement()) {
                 seedRoleMenuItems(stmt, "role_admin", allMenuIds);

@@ -180,4 +180,14 @@ public class Ticket extends BaseEntity {
      * 已审批级数
      */
     private Integer approvedLevel;
+
+    /**
+     * 执行方式: auto（审批通过后自动执行）, manual（审批通过后由提交者手动执行）
+     */
+    private String execMode;
+
+    /**
+     * 原因类型: config_fix, init_data, bug_fix, no_backend_feature, data_cleanup, test, misoperation, other
+     */
+    private String reasonType;
 }

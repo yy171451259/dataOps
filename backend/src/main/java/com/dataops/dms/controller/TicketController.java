@@ -217,6 +217,22 @@ public class TicketController {
         return Result.success("取消成功");
     }
 
+    /**
+     * 手动执行工单（审批通过后由提交者触发）
+     */
+    @PostMapping("/{id}/execute")
+    @Operation(summary = "手动执行工单")
+    public Result<Void> executeTicket(
+            @PathVariable String id,
+            HttpServletRequest httpRequest) {
+        String operatorId = (String) httpRequest.getAttribute("userId");
+        if (operatorId == null) {
+            operatorId = "user_admin";
+        }
+        ticketService.executeTicket(id, operatorId);
+        return Result.success("执行成功");
+    }
+
     // ============ 对标阿里云DMS：无锁DML运行态控制 ============
 
     /**

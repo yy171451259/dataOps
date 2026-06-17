@@ -121,4 +121,9 @@ public interface TicketService extends IService<Ticket> {
      * 获取工单审批记录列表
      */
     List<Map<String, Object>> getApprovalRecords(String ticketId);
+
+    /**
+     * 手动执行工单（审批通过后由提交者触发）
+     */
+    boolean executeTicket(String ticketId, String operatorId);
 }

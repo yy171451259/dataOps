@@ -15,7 +15,6 @@ import { ticketApi, permissionRequestApi } from './utils/api';
 import SqlEditor from './components/SqlEditor';
 import TicketList from './pages/TicketList';
 import DatabaseList from './pages/DatabaseList';
-import AuditList from './pages/AuditList';
 import LoginPage from './pages/LoginPage';
 import DashboardPage from './pages/DashboardPage';
 import DatabaseMonitorPage from './pages/DatabaseMonitorPage';
@@ -46,7 +45,6 @@ const pageComponents: Record<string, React.FC> = {
   '/pipeline': PipelinePage,
   '/metadata': MetadataPage,
   '/tickets': TicketList,
-  '/audit': AuditList,
   '/masking': DataMaskingPage,
   '/quality': DataQualityPage,
   '/resource-owners': ResourceOwnerPage,
@@ -68,7 +66,6 @@ const pageLabels: Record<string, string> = {
   '/pipeline': '数据管道',
   '/metadata': '元数据管理',
   '/tickets': '数据变更工单',
-  '/audit': '审计日志',
   '/masking': '数据脱敏',
   '/quality': '数据质量',
   '/resource-owners': '资源负责人',

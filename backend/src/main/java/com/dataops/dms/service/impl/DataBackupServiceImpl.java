@@ -52,13 +52,18 @@ public class DataBackupServiceImpl extends ServiceImpl<DataChangeBackupMapper, D
         // 解析SQL，识别影响的表和数据
         String tableName = extractTableName(sql, changeType);
         
-        // 备份原始数据（只针对UPDATE/DELETE）
+        // 备份原始数据（只针对UPDATE/DELETE，支持上层传入 DML/UPDATE/DELETE）
         String backupData = null;
         String rollbackSql = null;
+        String actualType = changeType != null ? changeType.toUpperCase() : "";
+        // 工单表存储的是 "DML"，实际SQL类型需从SQL内容检测
+        if (actualType.equals("DML")) {
+            actualType = detectChangeTypeFromSql(sql);
+        }
         
-        if ("UPDATE".equalsIgnoreCase(changeType) || "DELETE".equalsIgnoreCase(changeType)) {
-            backupData = backupOriginalData(db, databaseName, sql, changeType, tableName);
-            rollbackSql = rollbackGenerator.generateRollbackSql(sql, changeType, tableName, backupData);
+        if ("UPDATE".equalsIgnoreCase(actualType) || "DELETE".equalsIgnoreCase(actualType)) {
+            backupData = backupOriginalData(db, databaseName, sql, actualType, tableName);
+            rollbackSql = rollbackGenerator.generateRollbackSql(sql, actualType, tableName, backupData);
             log.info("生成回滚SQL: {}", rollbackSql);
         }
 
@@ -222,5 +227,18 @@ public class DataBackupServiceImpl extends ServiceImpl<DataChangeBackupMapper, D
         }
         
         return null;
+    }
+
+    /**
+     * 从SQL内容直接检测实际变更类型（UPDATE/DELETE/INSERT）
+     */
+    private String detectChangeTypeFromSql(String sql) {
+        if (sql == null) return "UNKNOWN";
+        String upper = sql.trim().toUpperCase();
+        if (upper.startsWith("UPDATE")) return "UPDATE";
+        if (upper.startsWith("DELETE")) return "DELETE";
+        if (upper.startsWith("INSERT")) return "INSERT";
+        if (upper.startsWith("ALTER") || upper.startsWith("CREATE") || upper.startsWith("DROP")) return "DDL";
+        return "UNKNOWN";
     }
 }

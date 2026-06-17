@@ -12,5 +12,17 @@ export default defineConfig({
         changeOrigin: true
       }
     }
-  }
+  },
+  optimizeDeps: {
+    include: ['monaco-editor'],
+  },
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          monaco: ['monaco-editor'],
+        },
+      },
+    },
+  },
 })
