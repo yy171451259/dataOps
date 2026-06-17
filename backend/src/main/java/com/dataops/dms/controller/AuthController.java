@@ -71,4 +71,22 @@ public class AuthController {
     public Result<String> health() {
         return Result.success("OK", "OK");
     }
+
+    @GetMapping("/dingtalk/auth-url")
+    @Operation(summary = "获取钉钉授权URL")
+    public Result<String> getDingTalkAuthUrl(@RequestParam(required = false) String state, 
+                                              @RequestParam(required = false) String redirectUri) {
+        if (state == null || state.isEmpty()) {
+            state = "dataops_dms_" + System.currentTimeMillis();
+        }
+        String authUrl = authService.getDingTalkAuthUrl(state, redirectUri);
+        return Result.success("获取成功", authUrl);
+    }
+
+    @PostMapping("/dingtalk/callback")
+    @Operation(summary = "钉钉登录回调")
+    public Result<Map<String, Object>> dingTalkCallback(@RequestBody Map<String, String> params) {
+        String authCode = params.get("authCode");
+        return authService.dingTalkLogin(authCode);
+    }
 }

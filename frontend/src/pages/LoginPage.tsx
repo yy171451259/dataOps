@@ -1,7 +1,7 @@
-import React, { useState } from 'react';
-import { Form, Input, Button, Card, message, Typography } from 'antd';
-import { UserOutlined, LockOutlined, DatabaseOutlined } from '@ant-design/icons';
-import { useNavigate } from 'react-router-dom';
+import React, { useState, useEffect } from 'react';
+import { Form, Input, Button, Card, message, Typography, Divider } from 'antd';
+import { UserOutlined, LockOutlined, DatabaseOutlined, WechatOutlined } from '@ant-design/icons';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { authApi } from '../utils/api';
 import { useAuthStore } from '../store/useAuthStore';
 
@@ -9,8 +9,56 @@ const { Title, Text } = Typography;
 
 const LoginPage: React.FC = () => {
   const [loading, setLoading] = useState(false);
+  const [dingTalkLoading, setDingTalkLoading] = useState(false);
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const setAuth = useAuthStore((s) => s.setAuth);
+
+  // 处理钉钉登录回调
+  useEffect(() => {
+    const authCode = searchParams.get('authCode');
+    if (authCode) {
+      handleDingTalkCallback(authCode);
+    }
+  }, [searchParams]);
+
+  const handleDingTalkCallback = async (authCode: string) => {
+    setDingTalkLoading(true);
+    try {
+      const res = await authApi.dingTalkLogin(authCode);
+      const data = res.data.data;
+      setAuth(
+        data.token,
+        {
+          userId: data.userId,
+          username: data.username,
+          nickname: data.nickname,
+          isAdmin: data.isAdmin,
+        },
+        data.permissions || [],
+        data.menus || []
+      );
+      message.success('钉钉登录成功');
+      navigate('/sql');
+    } catch (err: any) {
+      message.error(err.response?.data?.message || '钉钉登录失败');
+    } finally {
+      setDingTalkLoading(false);
+    }
+  };
+
+  const handleDingTalkLogin = async () => {
+    setDingTalkLoading(true);
+    try {
+      const res = await authApi.getDingTalkAuthUrl();
+      const authUrl = res.data.data;
+      // 跳转到钉钉授权页面
+      window.location.href = authUrl;
+    } catch (err: any) {
+      message.error(err.response?.data?.message || '获取钉钉授权链接失败');
+      setDingTalkLoading(false);
+    }
+  };
 
   const onFinish = async (values: { username: string; password: string }) => {
     setLoading(true);
@@ -69,11 +117,19 @@ const LoginPage: React.FC = () => {
             </Button>
           </Form.Item>
         </Form>
-        <div style={{ textAlign: 'center' }}>
-          <Text type="secondary" style={{ fontSize: 12 }}>
-            默认账号：admin / admin123
-          </Text>
-        </div>
+
+        <Divider plain>或使用钉钉登录</Divider>
+
+        <Button
+          icon={<WechatOutlined />}
+          loading={dingTalkLoading}
+          onClick={handleDingTalkLogin}
+          block
+          style={{ marginBottom: 16 }}
+        >
+          钉钉扫码登录
+        </Button>
+
       </Card>
     </div>
   );

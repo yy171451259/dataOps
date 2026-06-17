@@ -394,7 +394,7 @@ const PermissionRequestPage: React.FC = () => {
       ),
       children: (
         <>
-        <Card style={{ maxWidth: '100%' }}>
+        <Card title="新建权限申请" extra={<Button icon={<ArrowLeftOutlined />} onClick={() => setActiveTab('my')}>返回列表</Button>} style={{ maxWidth: '100%' }}>
           <Form
             form={submitForm}
             layout="horizontal"
@@ -564,11 +564,9 @@ const PermissionRequestPage: React.FC = () => {
 
   return (
     <div style={{ height: 'calc(100vh - 64px)', overflow: 'auto' }}>
-      <Tabs
-        activeKey={activeTab}
-        onChange={setActiveTab}
-        items={tabItems}
-      />
+      {tabItems.filter(item => item.key === activeTab).map(item => (
+        <div key={item.key}>{item.children}</div>
+      ))}
 
       {/* 审批/拒绝 Modal */}
       <Modal

@@ -40,4 +40,19 @@ public interface AuthService {
      * 获取用户可见的菜单树
      */
     Result<List<Map<String, Object>>> getUserMenus(String userId);
+
+    /**
+     * 获取钉钉授权URL
+     */
+    String getDingTalkAuthUrl(String state);
+
+    /**
+     * 获取钉钉授权URL（支持自定义回调地址）
+     */
+    String getDingTalkAuthUrl(String state, String redirectUri);
+
+    /**
+     * 钉钉登录
+     */
+    Result<Map<String, Object>> dingTalkLogin(String authCode);
 }

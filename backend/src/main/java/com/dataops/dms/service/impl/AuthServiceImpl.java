@@ -148,4 +148,88 @@ public class AuthServiceImpl implements AuthService {
     public Result<List<Map<String, Object>>> getUserMenus(String userId) {
         return sysMenuService.getUserMenuTree(userId);
     }
+
+    @Resource
+    private com.dataops.dms.service.DingTalkOAuthService dingTalkOAuthService;
+
+    @Override
+    public String getDingTalkAuthUrl(String state) {
+        return dingTalkOAuthService.getAuthUrl(state);
+    }
+
+    @Override
+    public Result<Map<String, Object>> dingTalkLogin(String authCode) {
+        try {
+            // 1. 通过授权码获取钉钉用户信息
+            Map<String, Object> dingTalkUser = dingTalkOAuthService.getUserInfoByAuthCode(authCode);
+            String unionId = (String) dingTalkUser.get("unionId");
+            String userId = (String) dingTalkUser.get("userId");
+            String nickname = (String) dingTalkUser.get("nick");
+            String avatar = (String) dingTalkUser.get("avatarUrl");
+
+            if (unionId == null) {
+                return Result.error("获取钉钉用户信息失败");
+            }
+
+            // 2. 查找是否已存在该钉钉用户
+            LambdaQueryWrapper<User> wrapper = new LambdaQueryWrapper<>();
+            wrapper.eq(User::getDingtalkUnionId, unionId);
+            User user = userMapper.selectOne(wrapper);
+
+            // 3. 如果用户不存在，创建新用户
+            if (user == null) {
+                user = new User();
+                user.setUsername("dt_" + userId); // 使用钉钉用户ID作为用户名
+                user.setNickname(nickname != null ? nickname : "钉钉用户");
+                user.setAvatar(avatar);
+                user.setDingtalkUnionId(unionId);
+                user.setDingtalkUserId(userId);
+                user.setIsActive(true);
+                user.setIsAdmin(false);
+                userMapper.insert(user);
+
+                // 为新用户分配默认角色：开发人员（developer）
+                String roleRecordId = java.util.UUID.randomUUID().toString().replace("-", "");
+                roleMapper.insertUserRole(roleRecordId, user.getId(), "role_developer", "system");
+            } else {
+                // 更新钉钉用户ID（可能变化）
+                user.setDingtalkUserId(userId);
+                if (nickname != null) {
+                    user.setNickname(nickname);
+                }
+                if (avatar != null) {
+                    user.setAvatar(avatar);
+                }
+                userMapper.updateById(user);
+            }
+
+            // 4. 生成JWT Token
+            String token = jwtUtil.generateToken(user.getId(), user.getUsername());
+
+            // 5. 加载用户权限码列表
+            List<String> permissionCodes = permissionMapper.findPermissionCodesByUserId(user.getId());
+
+            // 6. 构建返回结果
+            Map<String, Object> result = new HashMap<>();
+            result.put("token", token);
+            result.put("userId", user.getId());
+            result.put("username", user.getUsername());
+            result.put("nickname", user.getNickname());
+            result.put("isAdmin", user.getIsAdmin());
+            result.put("permissions", permissionCodes);
+
+            // 7. 加载用户菜单树
+            try {
+                com.dataops.dms.common.result.Result<List<Map<String, Object>>> menuResult = sysMenuService.getUserMenuTree(user.getId());
+                result.put("menus", menuResult.getData());
+            } catch (Exception e) {
+                result.put("menus", new ArrayList<>());
+            }
+
+            return Result.success("钉钉登录成功", result);
+        } catch (Exception e) {
+            e.printStackTrace();
+            return Result.error("钉钉登录失败：" + e.getMessage());
+        }
+    }
 }

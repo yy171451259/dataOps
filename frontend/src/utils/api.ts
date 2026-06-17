@@ -36,6 +36,8 @@ export const authApi = {
   getMe: () => api.get('/auth/me'),
   changePassword: (oldPassword: string, newPassword: string) =>
     api.post('/auth/change-password', { oldPassword, newPassword }),
+  getDingTalkAuthUrl: (state?: string) => api.get('/auth/dingtalk/auth-url', { params: { state } }),
+  dingTalkLogin: (authCode: string) => api.post('/auth/dingtalk/callback', { authCode }),
 };
 
 // ============ SQL ============

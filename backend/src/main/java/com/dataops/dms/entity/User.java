@@ -46,4 +46,14 @@ public class User extends BaseEntity {
      * 是否管理员
      */
     private Boolean isAdmin;
+
+    /**
+     * 钉钉UnionID（跨应用唯一）
+     */
+    private String dingtalkUnionId;
+
+    /**
+     * 钉钉用户ID
+     */
+    private String dingtalkUserId;
 }

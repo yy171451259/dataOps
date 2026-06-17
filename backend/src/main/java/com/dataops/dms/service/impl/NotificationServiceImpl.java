@@ -35,6 +35,9 @@ public class NotificationServiceImpl implements NotificationService {
     @Autowired(required = false)
     private JavaMailSender mailSender;
 
+    @Resource
+    private com.dataops.dms.service.DingTalkMessageService dingTalkMessageService;
+
     @Override
     public Result<Page<NotificationConfig>> listConfigs(Integer page, Integer size) {
         LambdaQueryWrapper<NotificationConfig> wrapper = new LambdaQueryWrapper<>();
@@ -95,6 +98,8 @@ public class NotificationServiceImpl implements NotificationService {
                     sendWebhook(recipient, title, content);
                     break;
                 case "DINGTALK":
+                    sendDingTalk(recipient, title, content);
+                    break;
                 case "WECHAT":
                 case "SMS":
                     // 占位：接入第三方SDK
@@ -133,6 +138,19 @@ public class NotificationServiceImpl implements NotificationService {
     private void sendWebhook(String url, String title, String content) {
         // 占位：HTTP POST webhook
         log.info("Webhook to {}: {} - {}", url, title, content);
+    }
+
+    private void sendDingTalk(String userId, String title, String content) {
+        try {
+            // 发送钉钉个人消息
+            boolean success = dingTalkMessageService.sendMarkdownMessage(userId, title, content);
+            if (!success) {
+                throw new RuntimeException("钉钉消息发送失败");
+            }
+        } catch (Exception e) {
+            log.error("发送钉钉消息失败", e);
+            throw new RuntimeException("钉钉消息发送失败: " + e.getMessage());
+        }
     }
 
     @Override

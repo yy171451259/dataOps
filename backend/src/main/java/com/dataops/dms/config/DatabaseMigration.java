@@ -196,6 +196,14 @@ public class DatabaseMigration implements CommandLineRunner {
             // 补齐 data_change_backup 表缺失字段
             addColumnIfNotExists(conn, "data_change_backup", "rollback_by", "VARCHAR(64) COMMENT '回滚操作人ID'");
 
+            // ============ V10: 钉钉集成 ============
+            addColumnIfNotExists(conn, "sys_user", "dingtalk_union_id", "VARCHAR(64) COMMENT '钉钉UnionID（跨应用唯一）' AFTER `is_admin`");
+            addColumnIfNotExists(conn, "sys_user", "dingtalk_user_id", "VARCHAR(64) COMMENT '钉钉用户ID' AFTER `dingtalk_union_id`");
+
+            // 添加索引
+            addIndexIfNotExists(conn, "sys_user", "idx_dingtalk_union_id", "dingtalk_union_id");
+            addIndexIfNotExists(conn, "sys_user", "idx_dingtalk_user_id", "dingtalk_user_id");
+
             // ============ V7: 数据权限体系分离 ============
             // 1. 新建 sys_user_permission —— 存储用户级数据资源权限（替代原本混入 sys_permission 的数据权限记录）
             createTableIfNotExists(conn, "sys_user_permission",
@@ -305,11 +313,36 @@ public class DatabaseMigration implements CommandLineRunner {
         }
     }
 
+    private void addIndexIfNotExists(Connection conn, String tableName, String indexName, String columnName) {
+        try {
+            if (!indexExists(conn, tableName, indexName)) {
+                try (Statement stmt = conn.createStatement()) {
+                    stmt.execute("CREATE INDEX `" + indexName + "` ON `" + tableName + "`(`" + columnName + "`)");
+                    log.info("Migration: Added index {} to {} table", indexName, tableName);
+                }
+            }
+        } catch (Exception e) {
+            log.warn("Failed to add index {}.{}: {}", tableName, indexName, e.getMessage());
+        }
+    }
+
     private boolean columnExists(Connection conn, String tableName, String columnName) throws Exception {
         DatabaseMetaData meta = conn.getMetaData();
         try (ResultSet rs = meta.getColumns(null, null, tableName, columnName)) {
             return rs.next();
         }
+    }
+
+    private boolean indexExists(Connection conn, String tableName, String indexName) throws Exception {
+        DatabaseMetaData meta = conn.getMetaData();
+        try (ResultSet rs = meta.getIndexInfo(null, null, tableName, false, false)) {
+            while (rs.next()) {
+                if (indexName.equals(rs.getString("INDEX_NAME"))) {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 
     private boolean tableExists(Connection conn, String tableName) throws Exception {
