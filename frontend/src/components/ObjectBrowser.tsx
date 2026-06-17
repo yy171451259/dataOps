@@ -565,6 +565,7 @@ const ObjectBrowser: React.FC<ObjectBrowserProps> = ({
           <div style={{ textAlign: 'center', paddingTop: 40, color: '#999', fontSize: 12 }}>暂无数据库实例</div>
         ) : (
           <Tree
+            key={cacheVersion + '-' + searchText}
             treeData={finalTreeData as TreeDataNode[]}
             expandedKeys={expandedKeys}
             selectedKeys={selectedKeys}
