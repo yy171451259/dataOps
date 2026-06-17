@@ -77,6 +77,16 @@ public class TicketController {
     }
 
     /**
+     * 更新工单基本信息（影响行数、相关人员等）
+     */
+    @PutMapping("/{id}")
+    @Operation(summary = "更新工单信息")
+    public Result<?> updateTicket(@PathVariable String id, @RequestBody Map<String, Object> body) {
+        ticketService.updateTicketInfo(id, body);
+        return Result.success("更新成功");
+    }
+
+    /**
      * 获取所有工单（分页）
      */
     @GetMapping

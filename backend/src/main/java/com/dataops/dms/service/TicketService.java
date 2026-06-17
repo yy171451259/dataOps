@@ -21,6 +21,11 @@ public interface TicketService extends IService<Ticket> {
     Ticket createDataChangeTicket(TicketCreateDTO dto, String creatorId);
 
     /**
+     * 更新工单基本信息（影响行数、相关人员等）
+     */
+    void updateTicketInfo(String ticketId, Map<String, Object> updates);
+
+    /**
      * 检测SQL是否需要无锁数据变更（DML）
      */
     LockFreeDmlEngine.DmlCheckResult checkLockFreeDml(String instanceId, String schemaName, String sql) throws Exception;

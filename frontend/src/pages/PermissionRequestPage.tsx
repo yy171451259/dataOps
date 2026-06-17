@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import {
   Button, Table, message, Tabs, Tag, Form, Select, Checkbox, Input, Modal,
   Space, Card, Descriptions, Badge, Empty, Popconfirm, Tooltip,
-  Steps, Row, Col, Timeline,
+  Steps, Row, Col, Timeline, DatePicker,
 } from 'antd';
 import {
   PlusOutlined, CheckOutlined, CloseOutlined, EyeOutlined,
@@ -11,7 +11,7 @@ import {
   CheckCircleFilled, CloseCircleFilled,
 } from '@ant-design/icons';
 import dayjs from 'dayjs';
-import { permissionRequestApi, instanceApi } from '../utils/api';
+import { permissionRequestApi, instanceApi, userApi } from '../utils/api';
 
 const { Option } = Select;
 const { TextArea } = Input;
@@ -69,9 +69,11 @@ const PermissionRequestPage: React.FC = () => {
   const [myRequests, setMyRequests] = useState<PermissionRequest[]>([]);
   const [myLoading, setMyLoading] = useState(false);
   const [myPage, setMyPage] = useState<number>(1);
-  const [mySize, setMySize] = useState<number>(15);
+  const [mySize, setMySize] = useState<number>(10);
   const [myTotal, setMyTotal] = useState<number>(0);
   const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [searchText, setSearchText] = useState('');
+  const [users, setUsers] = useState<any[]>([]);
 
   // Tab 2: 新建申请
   const [submitForm] = Form.useForm();
@@ -100,7 +102,17 @@ const PermissionRequestPage: React.FC = () => {
 
   useEffect(() => {
     loadDatabases();
+    loadUsers();
   }, []);
+
+  const loadUsers = async () => {
+    try {
+      const res = await userApi.list();
+      setUsers(Array.isArray(res?.data?.data) ? res.data.data : []);
+    } catch {
+      setUsers([]);
+    }
+  };
 
   const loadDatabases = async () => {
     try {
@@ -124,6 +136,9 @@ const PermissionRequestPage: React.FC = () => {
       };
       if (statusFilter && statusFilter !== 'all') {
         params.status = statusFilter;
+      }
+      if (searchText) {
+        params.keyword = searchText;
       }
       const res = await permissionRequestApi.my(params);
       const data = res?.data?.data;
@@ -275,80 +290,55 @@ const PermissionRequestPage: React.FC = () => {
 
   const myColumns = [
     {
-      title: '工单号', dataIndex: 'id', key: 'id', width: 80,
-      render: (id: string) => <span style={{ fontFamily: 'monospace' }}>{id ? id.slice(0, 10) : '-'}</span>,
+      title: '工单编号', dataIndex: 'id', key: 'id', width: 160,
+      render: (id: string) => <a onClick={() => { const r = myRequests.find(req => req.id === id); if (r) showDetail(r); }} style={{ color: '#1890ff' }}>{id}</a>,
     },
     {
-      title: '申请原因', dataIndex: 'reason', key: 'reason', width: 240,
-      render: (t: string) => (
-          <Tooltip title={t}>
-          <span style={{ color: '#555' }}>
-            {t ? (t.length > 20 ? t.slice(0, 20) + '...' : t) : '-'}
-          </span>
-          </Tooltip>
-      ),
+      title: '申请原因', dataIndex: 'reason', key: 'reason', width: 160, ellipsis: true, render: (v: string) => v || '-',
     },
     {
-      title: '资源', dataIndex: 'resourceName', key: 'resource', width: 220,
-      render: (_: string, r: PermissionRequest) => (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <Tag color="default" style={{ marginRight: 0 }}>{resourceTypeLabels[r.resourceType] || r.resourceType}</Tag>
-          <span style={{ color: '#222' }}>{r.resourceName || '-'}</span>
-        </div>
-      ),
+      title: '资源类型', dataIndex: 'resourceType', key: 'resourceType', width: 120,
+      render: (type: string) => <span>{resourceTypeLabels[type] || (type || '-').toUpperCase()}</span>,
     },
     {
-      title: '操作类型', dataIndex: 'requestedPermissions', key: 'requestedPermissions', width: 180,
-      render: (v: string) => {
-        if (!v) return '-';
-        const perms = String(v).split(',').map((s: string) => s.trim()).filter(Boolean);
-        return (
-          <span>
-            {perms.map((p: string, i: number) => (
-              <Tag key={i} color="blue" style={{ marginRight: 4, marginBottom: 2 }}>{p}</Tag>
-            ))}
-          </span>
-        );
+      title: '资源名称', dataIndex: 'resourceName', key: 'resourceName', width: 160, ellipsis: true, render: (v: string) => v || '-',
+    },
+    {
+      title: '当前状态', dataIndex: 'status', key: 'status', width: 100,
+      render: (status: string) => {
+        const s: Record<string, { color: string; text: string }> = {
+          pending: { color: '#faad14', text: '待审批' },
+          approved: { color: '#52c41a', text: '已通过' },
+          rejected: { color: '#ff4d4f', text: '已拒绝' },
+          cancelled: { color: '#999', text: '已撤销' },
+        };
+        const { color, text } = s[status] || { color: '#999', text: status || '未知' };
+        return <Tag style={{ color }}>{text}</Tag>;
       },
     },
     {
-      title: '当前状态', dataIndex: 'status', key: 'status', width: 80,
-      render: (s: string) => {
-        const st = statusMap[s] || { color: 'default', text: s };
-        return <Badge status={st.color as any} text={st.text} />;
-      },
-    },
-    {
-      title: '发起人', dataIndex: 'applicantName', key: 'applicantName', width: 110,
+      title: '发起人', dataIndex: 'applicantName', key: 'applicantName', width: 100,
       render: (n: string, r: PermissionRequest) => n || r.applicantId || '-',
     },
     {
-      title: '当前处理人', dataIndex: 'approverName', key: 'approverName', width: 110,
+      title: '当前处理人', dataIndex: 'approverName', key: 'approverName', width: 100,
       render: (n: string, r: PermissionRequest) => n || r.approverId || '-',
     },
     {
-      title: '申请时间', dataIndex: 'createdAt', key: 'createdAt', width: 170,
-      render: (t: string) => t ? dayjs(t).format('YYYY-MM-DD HH:mm:ss') : '-',
-      sorter: (a: any, b: any) => dayjs(a.createdAt).valueOf() - dayjs(b.createdAt).valueOf(),
+      title: '创建时间', dataIndex: 'createdAt', key: 'createdAt', width: 160,
+      render: (t: string) => t ? String(t).replace('T', ' ').slice(0, 19) : '-',
     },
     {
-      title: '审批时间', dataIndex: 'approvedAt', key: 'approvedAt', width: 170,
-      render: (t: string) => t ? dayjs(t).format('YYYY-MM-DD HH:mm:ss') : '-',
-      sorter: (a: any, b: any) => dayjs(a.approvedAt || a.createdAt).valueOf() - dayjs(b.approvedAt || b.createdAt).valueOf(),
-    },
-    {
-      title: '操作', key: 'action', width: 130, fixed: 'right' as const,
+      title: '操作', key: 'action', width: 80, fixed: 'right' as const,
       render: (_: any, record: PermissionRequest) => (
-        <Space size="small">
-          <Button type="link" size="small" onClick={() => showDetail(record)}>
-            详情
-          </Button>
+        <span>
+          <a onClick={() => showDetail(record)} style={{ color: '#1890ff' }}>详情</a>
           {record.status === 'pending' && (
             <Popconfirm title="确定撤销这申请？" onConfirm={() => handleCancel(record.id)}>
-              <Button type="link" danger size="small">撤销</Button>
+              <a style={{ color: '#ff4d4f', marginLeft: 8 }}>撤销</a>
             </Popconfirm>
           )}
-        </Space>
+        </span>
       ),
     },
   ];
@@ -358,45 +348,41 @@ const PermissionRequestPage: React.FC = () => {
       key: 'my',
       label: '我的申请',
       children: (
-        <Card>
-          <div style={{ marginBottom: 16, display: 'flex', gap: 12, alignItems: 'center' }}>
-            <Button icon={<ReloadOutlined />} onClick={loadMyRequests} loading={myLoading}>
-              刷新
-            </Button>
-            <Select
-              value={statusFilter}
-              onChange={setStatusFilter}
-              style={{ width: 140 }}
-              allowClear
-              placeholder="筛选状态"
-              options={[
-                { value: 'all', label: '全部状态' },
-                { value: 'pending', label: '待审批' },
-                { value: 'approved', label: '已通过' },
-                { value: 'rejected', label: '已拒绝' },
-                { value: 'cancelled', label: '已撤销' },
-              ]}
-            />
+        <Card title="我的权限申请工单" extra={<Button type="primary" icon={<PlusOutlined />} onClick={() => setActiveTab('create')}>新建申请</Button>}>
+          <div style={{ marginBottom: 16 }}>
+            <div style={{ marginBottom: 12 }}>
+              <Space><span>状态：</span>
+                <Select value={statusFilter} onChange={v => setStatusFilter(v)} style={{ width: 140 }} size="middle">
+                  <Option value="all">全部</Option><Option value="pending">待审批</Option>
+                  <Option value="approved">已通过</Option><Option value="rejected">已拒绝</Option>
+                  <Option value="cancelled">已撤销</Option>
+                </Select>
+              </Space>
+            </div>
+            <Row gutter={12} align="middle">
+              <Col flex="none"><Select size="middle" defaultValue="submitTime" style={{ width: 110 }}><Option value="submitTime">按提交时间</Option></Select></Col>
+              <Col flex="none"><DatePicker.RangePicker size="middle" placeholder={['起始时间','截止时间']} /></Col>
+              <Col flex="auto"><Input.Search size="middle" placeholder="工单号、姓名、资源名称" value={searchText} onChange={e => setSearchText(e.target.value)} onSearch={() => loadMyRequests(1)} /></Col>
+            </Row>
           </div>
           <Table
             dataSource={myRequests}
             columns={myColumns}
             rowKey="id"
             loading={myLoading}
+            scroll={{ x: 1200 }}
             pagination={{
               current: myPage,
               pageSize: mySize,
               total: myTotal,
-              showTotal: (t: number) => `共 ${t} 条申请`,
+              showTotal: (t: number) => `共 ${t} 条`,
+              showSizeChanger: true,
               onChange: (p: number, s: number) => {
                 setMyPage(p);
                 setMySize(s);
                 loadMyRequests(p, s);
               },
             }}
-            scroll={{ x: 1850 }}
-            size="small"
-            locale={{ emptyText: <Empty description="暂无申请记录" /> }}
           />
         </Card>
       ),
@@ -577,10 +563,7 @@ const PermissionRequestPage: React.FC = () => {
   ];
 
   return (
-    <div>
-      <h2 style={{ marginBottom: 16 }}>
-        <SendOutlined /> 权限申请
-      </h2>
+    <div style={{ height: 'calc(100vh - 64px)', overflow: 'auto' }}>
       <Tabs
         activeKey={activeTab}
         onChange={setActiveTab}

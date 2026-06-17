@@ -19,6 +19,7 @@ import com.dataops.dms.sql.LockFreeDmlEngine;
 import com.dataops.dms.sql.OnlineDdlEngine;
 import com.dataops.dms.sql.SqlAuditEngine;
 import com.dataops.dms.sql.SqlExecutor;
+import com.dataops.dms.util.TicketIdGenerator;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -27,6 +28,7 @@ import javax.annotation.Resource;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.ResultSet;
+import java.util.Map;
 import java.sql.Statement;
 import java.time.LocalDateTime;
 import java.util.*;
@@ -127,11 +129,9 @@ public class TicketServiceImpl extends ServiceImpl<TicketMapper, Ticket> impleme
             log.warn("预估影响 {} 行(>1万行)，强烈建议开启无锁DML分批执行", estimateAffectedRows);
         }
 
-        // 6. Create ticket（工单编号：年月日时分秒 + 毫秒，17位纯数字）
+        // 6. Create ticket
         Ticket ticket = new Ticket();
-        ticket.setId(java.time.LocalDateTime.now().format(
-            java.time.format.DateTimeFormatter.ofPattern("yyyyMMddHHmmss"))
-            + String.format("%03d", System.currentTimeMillis() % 1000));
+        ticket.setId(TicketIdGenerator.generate());
         ticket.setType("data_change");
         ticket.setTitle(dto.getTitle());
         ticket.setDescription(dto.getDescription());
@@ -884,6 +884,50 @@ public class TicketServiceImpl extends ServiceImpl<TicketMapper, Ticket> impleme
         Page<Ticket> query = new Page<>(pageNum, pageSize);
         IPage<Ticket> result = this.page(query, wrapper);
         return PageResult.of(pageNum, pageSize, result.getTotal(), result.getRecords());
+    }
+
+    @Override
+    public void updateTicketInfo(String ticketId, Map<String, Object> updates) {
+        Ticket ticket = this.getById(ticketId);
+        if (ticket == null) {
+            throw new RuntimeException("Ticket not found: " + ticketId);
+        }
+        if (updates.containsKey("status")) {
+            ticket.setStatus((String) updates.get("status"));
+        }
+        if (updates.containsKey("executeResult")) {
+            ticket.setExecuteResult((String) updates.get("executeResult"));
+        }
+        if (updates.containsKey("executeTime")) {
+            ticket.setExecuteTime((String) updates.get("executeTime"));
+        }
+        if (updates.containsKey("affectedRows")) {
+            Object val = updates.get("affectedRows");
+            if (val != null) {
+                ticket.setEstimateAffectedRows(Integer.valueOf(String.valueOf(val)));
+            }
+        }
+        if (updates.containsKey("relatedPersons")) {
+            Object val = updates.get("relatedPersons");
+            String content = ticket.getContent();
+            Map<String, Object> contentMap;
+            if (content != null && !content.isEmpty()) {
+                try {
+                    contentMap = new com.fasterxml.jackson.databind.ObjectMapper().readValue(content, Map.class);
+                } catch (Exception e) {
+                    contentMap = new java.util.HashMap<>();
+                }
+            } else {
+                contentMap = new java.util.HashMap<>();
+            }
+            contentMap.put("relatedPersons", val);
+            try {
+                ticket.setContent(new com.fasterxml.jackson.databind.ObjectMapper().writeValueAsString(contentMap));
+            } catch (Exception e) {
+                log.error("Failed to serialize relatedPersons", e);
+            }
+        }
+        this.updateById(ticket);
     }
 
     @Override

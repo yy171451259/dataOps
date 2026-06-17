@@ -10,6 +10,7 @@ import com.dataops.dms.dto.PermissionTicketDTO;
 import com.dataops.dms.dto.PermissionRequestDTO;
 import com.dataops.dms.entity.PermissionRequest;
 import com.dataops.dms.service.PermissionRequestService;
+import com.dataops.dms.util.TicketIdGenerator;
 import io.swagger.v3.oas.annotations.Operation;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.*;
@@ -18,7 +19,6 @@ import javax.annotation.Resource;
 import javax.servlet.http.HttpServletRequest;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.UUID;
 
 /**
  * 权限申请工单控制器
@@ -148,7 +148,7 @@ public class PermissionRequestController {
         if (nickname == null) nickname = username;
 
         PermissionRequest req = new PermissionRequest();
-        req.setId(UUID.randomUUID().toString().replace("-", ""));
+        req.setId(TicketIdGenerator.generate());
         req.setApplicantId(userId);
         req.setApplicantName(nickname);
         req.setResourceType(dto.getResourceType());
@@ -206,7 +206,7 @@ public class PermissionRequestController {
         List<PermissionRequest> createdList = new java.util.ArrayList<>();
         for (PermissionTicketDTO.ResourceItem resource : resources) {
             PermissionRequest req = new PermissionRequest();
-            req.setId(UUID.randomUUID().toString().replace("-", ""));
+            req.setId(TicketIdGenerator.generate());
             req.setApplicantId(userId);
             req.setApplicantName(nickname);
 

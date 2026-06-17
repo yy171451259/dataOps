@@ -91,6 +91,7 @@ export const ticketApi = {
   checkLockFreeDml: (instanceId: string, schemaName: string, sql: string) =>
     api.post('/tickets/check-lock-free-dml', { instanceId, schemaName, sql }),
   approvals: (id: string) => api.get(`/tickets/${id}/approvals`),
+  update: (id: string, data: any) => api.put(`/tickets/${id}`, data),
 };
 
 // ============ 资源Owner ============
