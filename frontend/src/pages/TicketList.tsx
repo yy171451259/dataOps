@@ -38,6 +38,8 @@ interface Ticket {
   dmlBatchCount?: number;
   approvalDeadline?: string;
   currentApproverId?: string;
+  approverIds?: string;
+  approverNames?: string;
   executeTime?: string;
   estimateAffectedRows?: number;
   errorMsg?: string;
@@ -373,6 +375,8 @@ const TicketList: React.FC = () => {
     { title: '发起人', dataIndex: 'creatorId', key: 'creatorId', width: 100, render: (v: string) => userNameMap[String(v)] || v || '-' },
     { title: '当前处理人', key: 'handler', width: 100,
       render: (_: any, record: Ticket) => {
+        const approverNames = record.approverNames;
+        if (approverNames) return <span>{approverNames}</span>;
         const approverId = record.currentApproverId;
         if (approverId) return <span>{userNameMap[String(approverId)] || approverId}</span>;
         if (record.status === 'pending') return <span style={{ color: '#faad14' }}>待审批</span>;
@@ -775,7 +779,13 @@ const TicketList: React.FC = () => {
                         ) : (
                           <Alert message="待审批" type="warning" showIcon style={{ marginBottom: 12 }} />
                         )}
-                        {viewingTicket?.currentApproverId && (
+                        {viewingTicket?.approverNames && (
+                          <Alert
+                            message={<span>审核人：<Tag color="blue">{viewingTicket.approverNames}</Tag></span>}
+                            type="info" showIcon style={{ marginBottom: 12 }}
+                          />
+                        )}
+                        {viewingTicket?.currentApproverId && !viewingTicket.approverNames && (
                           <Alert
                             message={<span>审核人：<Tag color="blue">{userNameMap[String(viewingTicket.currentApproverId)] || viewingTicket.currentApproverId}</Tag></span>}
                             type="info" showIcon style={{ marginBottom: 12 }}

@@ -102,7 +102,6 @@ const ProtectedLayout: React.FC = () => {
   const [activeTabKey, setActiveTabKey] = useState('/dashboard');
 
   useEffect(() => {
-    if (!hasPermission('ticket:approve')) return;
     const fetchPendingCount = async () => {
       try {
         const [ticketRes, permRes] = await Promise.all([
@@ -119,7 +118,7 @@ const ProtectedLayout: React.FC = () => {
     fetchPendingCount();
     const timer = setInterval(fetchPendingCount, 30000);
     return () => clearInterval(timer);
-  }, [hasPermission]);
+  }, []);
 
   const convertToMenuItems = (menuTree: any[]): any[] => {
     if (!menuTree || !Array.isArray(menuTree)) return [];
@@ -244,7 +243,7 @@ const ProtectedLayout: React.FC = () => {
                   <Avatar size={collapsed ? 30 : 28} icon={<UserOutlined />} />
                   {!collapsed && <span style={{ color: 'rgba(255,255,255,0.75)', fontSize: 13, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{user?.nickname || user?.username || '用户'}</span>}
                 </div>
-                {!collapsed && pendingCount > 0 && hasPermission('ticket:approve') && (
+                {!collapsed && pendingCount > 0 && (
                   <div onClick={(e) => { e.stopPropagation(); handleMenuClick({ key: '/dashboard' }); }} style={{ cursor: 'pointer', padding: '4px' }}>
                     <Badge count={pendingCount} size="small" offset={[4, 0]}>
                       <BellOutlined style={{ color: 'rgba(255,255,255,0.65)', fontSize: 18 }} />

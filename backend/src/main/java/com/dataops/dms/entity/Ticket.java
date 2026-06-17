@@ -51,6 +51,16 @@ public class Ticket extends BaseEntity {
     private String currentApproverId;
 
     /**
+     * 所有审批人ID（逗号分隔，支持多个）
+     */
+    private String approverIds;
+
+    /**
+     * 所有审批人姓名（逗号分隔，支持多个）
+     */
+    private String approverNames;
+
+    /**
      * 关联实例ID
      */
     private String instanceId;

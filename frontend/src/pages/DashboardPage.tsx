@@ -189,33 +189,31 @@ const DashboardPage: React.FC = () => {
 
   return (
     <div>
-      {hasPermission('ticket:approve') && (
-        <Card
-          title={
-            <span>
-              <AuditOutlined /> 待我审批
-              <Badge count={pendingItems.length} style={{ marginLeft: 8 }} />
-            </span>
-          }
-          style={{ marginTop: 16 }}
-          extra={
-            <Button icon={<ReloadOutlined />} onClick={loadData} loading={pendingLoading} size="small">
-              刷新
-            </Button>
-          }
-        >
-          <Table
-            dataSource={pendingItems}
-            columns={pendingColumns}
-            rowKey={(r: any) => `${r.source}-${r.id}`}
-            loading={pendingLoading}
-            pagination={{ pageSize: 10, showTotal: (t: number) => `共 ${t} 条待审批` }}
-            size="small"
-            scroll={{ x: 900 }}
-            locale={{ emptyText: '暂无待审批事项' }}
-          />
-        </Card>
-      )}
+      <Card
+        title={
+          <span>
+            <AuditOutlined /> 待我审批
+            <Badge count={pendingItems.length} style={{ marginLeft: 8 }} />
+          </span>
+        }
+        style={{ marginTop: 16 }}
+        extra={
+          <Button icon={<ReloadOutlined />} onClick={loadData} loading={pendingLoading} size="small">
+            刷新
+          </Button>
+        }
+      >
+        <Table
+          dataSource={pendingItems}
+          columns={pendingColumns}
+          rowKey={(r: any) => `${r.source}-${r.id}`}
+          loading={pendingLoading}
+          pagination={{ pageSize: 10, showTotal: (t: number) => `共 ${t} 条待审批` }}
+          size="small"
+          scroll={{ x: 900 }}
+          locale={{ emptyText: '暂无待审批事项' }}
+        />
+      </Card>
 
       <Modal
         title={approveAction === 'approve' ? '通过申请' : '拒绝申请'}

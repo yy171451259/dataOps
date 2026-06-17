@@ -15,6 +15,8 @@ export interface PermissionRequest {
   applicantName: string;
   approverId?: string;
   approverName?: string;
+  approverIds?: string;
+  approverNames?: string;
   approverComment?: string;
   createdAt: string;
   approvedAt?: string;
@@ -100,12 +102,12 @@ const RequestDetail: React.FC<{ request: PermissionRequest }> = ({ request }) =>
   let approveBody: React.ReactNode;
   let approveDotColor: string = 'gray';
   if (request.status === 'pending') {
-    const approver = (request as any).approverName || (request as any).approverId;
+    const approverNames = (request as any).approverNames || (request as any).approverName || (request as any).approverId;
     approveBody = (
       <div>
         <Tag color="processing">待审批</Tag>
         <span style={{ color: '#666', marginLeft: 8 }}>
-          {approver ? `等待 ${approver} 审批中...` : '等待资源 Owner 或管理员审批...'}
+          {approverNames ? `等待 ${approverNames} 审批中...` : '等待资源 Owner 或管理员审批...'}
         </span>
       </div>
     );
@@ -224,9 +226,9 @@ const RequestDetail: React.FC<{ request: PermissionRequest }> = ({ request }) =>
                     </Col>
                   </Row>
                   <Row>
-                    <Col span={6} style={{ color: '#666' }}>审批人</Col>
-                    <Col span={18} style={{ color: '#222' }}>{request.approverName || request.approverId || '-'}</Col>
-                  </Row>
+            <Col span={6} style={{ color: '#666' }}>审批人</Col>
+            <Col span={18} style={{ color: '#222' }}>{(request as any).approverNames || request.approverName || request.approverId || '-'}</Col>
+          </Row>
                 </div>
               </div>
             )

@@ -259,6 +259,15 @@ public class PermissionRequestController {
             }
             req.setApproverId(approver[0]);
             req.setApproverName(approver[1]);
+            req.setApproverIds(approver[0]);
+            req.setApproverNames(approver[1]);
+
+            // 获取所有审批人（支持多个 Owner）
+            String[] allApprovers = resolveAllApprovers(ownerResourceType, ownerResourceId, parentResourceType, parentResourceId);
+            if (allApprovers[0] != null) {
+                req.setApproverIds(allApprovers[0]);
+                req.setApproverNames(allApprovers[1]);
+            }
 
             req.setRequestedPermissions(permsStr);
             req.setReason(dto.getReason());
@@ -387,6 +396,60 @@ public class PermissionRequestController {
         } catch (Exception ignored) { }
 
         return new String[] { null, null };
+    }
+
+    /**
+     * 查找资源的所有审批人（支持多个 Owner）
+     * 返回格式: [approverIds, approverNames]，用逗号分隔
+     */
+    private String[] resolveAllApprovers(String resourceType, String resourceId,
+                                         String parentResourceType, String parentResourceId) {
+        java.util.List<String> ids = new java.util.ArrayList<>();
+        java.util.List<String> names = new java.util.ArrayList<>();
+
+        // 1) 当前资源所有 Owner
+        java.util.List<com.dataops.dms.entity.ResourceOwner> owners =
+                resourceOwnerService.listByResource(resourceType, resourceId);
+        if (owners != null && !owners.isEmpty()) {
+            for (com.dataops.dms.entity.ResourceOwner owner : owners) {
+                ids.add(owner.getOwnerUserId());
+                names.add(resolveNickname(owner.getOwnerUserId(), owner.getOwnerUsername()));
+            }
+        }
+
+        // 2) 如果当前资源没有 Owner，回退到父级资源所有 Owner
+        if ((ids.isEmpty()) && parentResourceType != null && parentResourceId != null) {
+            java.util.List<com.dataops.dms.entity.ResourceOwner> parentOwners =
+                    resourceOwnerService.listByResource(parentResourceType, parentResourceId);
+            if (parentOwners != null && !parentOwners.isEmpty()) {
+                for (com.dataops.dms.entity.ResourceOwner owner : parentOwners) {
+                    ids.add(owner.getOwnerUserId());
+                    names.add(resolveNickname(owner.getOwnerUserId(), owner.getOwnerUsername()));
+                }
+            }
+        }
+
+        // 3) 如果都没有，回退到管理员
+        if (ids.isEmpty()) {
+            try {
+                com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<com.dataops.dms.entity.User> wrapper =
+                        new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<>();
+                wrapper.eq(com.dataops.dms.entity.User::getIsAdmin, true);
+                java.util.List<com.dataops.dms.entity.User> admins = userMapper.selectList(wrapper);
+                if (admins != null && !admins.isEmpty()) {
+                    for (com.dataops.dms.entity.User admin : admins) {
+                        ids.add(admin.getId());
+                        names.add(resolveNickname(admin.getId(), admin.getUsername()));
+                    }
+                }
+            } catch (Exception ignored) { }
+        }
+
+        if (ids.isEmpty()) {
+            return new String[] { null, null };
+        }
+
+        return new String[] { String.join(",", ids), String.join(",", names) };
     }
 
     private String resolveNickname(String userId, String fallbackUsername) {

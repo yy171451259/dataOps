@@ -70,6 +70,16 @@ public class PermissionRequest {
     private String approverName;
 
     /**
+     * 所有审批人ID（逗号分隔，支持多个）
+     */
+    private String approverIds;
+
+    /**
+     * 所有审批人姓名（逗号分隔，支持多个）
+     */
+    private String approverNames;
+
+    /**
      * 审批意见
      */
     private String approvalComment;

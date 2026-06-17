@@ -142,6 +142,9 @@ public class TicketServiceImpl extends ServiceImpl<TicketMapper, Ticket> impleme
         // 6. 查找审批人（参考权限申请的三级回退机制）
         String approverId = resolveApprover(dto);
         
+        // 6.1 查找所有审批人（支持多个 Owner）
+        String[] allApprovers = resolveAllApprovers(dto);
+        
         // 7. Create ticket
         Ticket ticket = new Ticket();
         ticket.setId(TicketIdGenerator.generate());
@@ -152,6 +155,8 @@ public class TicketServiceImpl extends ServiceImpl<TicketMapper, Ticket> impleme
         ticket.setPriority(dto.getPriority() != null ? dto.getPriority() : "normal");
         ticket.setCreatorId(creatorId);
         ticket.setCurrentApproverId(approverId);
+        ticket.setApproverIds(allApprovers[0]);
+        ticket.setApproverNames(allApprovers[1]);
         ticket.setInstanceId(dto.getInstanceId());
         ticket.setSchemaName(dto.getSchemaName());
         ticket.setSqlContent(dto.getSqlContent());
@@ -790,7 +795,11 @@ public class TicketServiceImpl extends ServiceImpl<TicketMapper, Ticket> impleme
         LambdaQueryWrapper<Ticket> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(Ticket::getStatus, "pending");
         if (approverId != null && !approverId.isEmpty()) {
-            wrapper.eq(Ticket::getCurrentApproverId, approverId);
+            wrapper.and(w -> {
+                w.eq(Ticket::getCurrentApproverId, approverId);
+                w.or().apply("FIND_IN_SET({0}, approver_ids)", approverId);
+                w.or().apply("CONCAT(',', approver_ids, ',') LIKE {0}", "%," + approverId + ",%");
+            });
         }
         wrapper.orderByDesc(Ticket::getCreateTime);
         return this.list(wrapper);
@@ -805,7 +814,11 @@ public class TicketServiceImpl extends ServiceImpl<TicketMapper, Ticket> impleme
         wrapper.eq(Ticket::getStatus, "pending");
         // 按审批人过滤：管理员传 null 看全部，普通用户只看自己是审批人的工单
         if (approverId != null && !approverId.isEmpty()) {
-            wrapper.eq(Ticket::getCurrentApproverId, approverId);
+            wrapper.and(w -> {
+                w.eq(Ticket::getCurrentApproverId, approverId);
+                w.or().apply("FIND_IN_SET({0}, approver_ids)", approverId);
+                w.or().apply("CONCAT(',', approver_ids, ',') LIKE {0}", "%," + approverId + ",%");
+            });
         }
         wrapper.orderByDesc(Ticket::getCreateTime);
 
@@ -1120,6 +1133,83 @@ public class TicketServiceImpl extends ServiceImpl<TicketMapper, Ticket> impleme
         }
 
         return null;
+    }
+
+    /**
+     * 查找资源的所有审批人（支持多个 Owner）
+     * 返回格式: [approverIds, approverNames]，用逗号分隔
+     */
+    private String[] resolveAllApprovers(TicketCreateDTO dto) {
+        java.util.List<String> ids = new java.util.ArrayList<>();
+        java.util.List<String> names = new java.util.ArrayList<>();
+        String instanceId = dto.getInstanceId();
+        String schemaName = dto.getSchemaName();
+
+        // 1) 查 Schema 级别所有 Owner
+        if (schemaName != null && !schemaName.isEmpty()) {
+            String schemaResourceId = instanceId + ":" + schemaName;
+            List<ResourceOwner> schemaOwners = resourceOwnerService.listByResource("schema", schemaResourceId);
+            if (schemaOwners != null && !schemaOwners.isEmpty()) {
+                for (ResourceOwner owner : schemaOwners) {
+                    ids.add(owner.getOwnerUserId());
+                    names.add(resolveNickname(owner.getOwnerUserId(), owner.getOwnerUsername()));
+                }
+            }
+            if (ids.isEmpty()) {
+                List<ResourceOwner> schemaNameOwners = resourceOwnerService.listByResource("schema", schemaName);
+                if (schemaNameOwners != null && !schemaNameOwners.isEmpty()) {
+                    for (ResourceOwner owner : schemaNameOwners) {
+                        ids.add(owner.getOwnerUserId());
+                        names.add(resolveNickname(owner.getOwnerUserId(), owner.getOwnerUsername()));
+                    }
+                }
+            }
+        }
+
+        // 2) 如果当前资源没有 Owner，查 Instance 级别所有 Owner（回退）
+        if (ids.isEmpty() && instanceId != null && !instanceId.isEmpty()) {
+            List<ResourceOwner> instanceOwners = resourceOwnerService.listByResource("instance", instanceId);
+            if (instanceOwners != null && !instanceOwners.isEmpty()) {
+                for (ResourceOwner owner : instanceOwners) {
+                    ids.add(owner.getOwnerUserId());
+                    names.add(resolveNickname(owner.getOwnerUserId(), owner.getOwnerUsername()));
+                }
+            }
+        }
+
+        // 3) 如果都没有，回退到所有管理员
+        if (ids.isEmpty()) {
+            try {
+                LambdaQueryWrapper<User> wrapper = new LambdaQueryWrapper<>();
+                wrapper.eq(User::getIsAdmin, true);
+                java.util.List<User> admins = userMapper.selectList(wrapper);
+                if (admins != null && !admins.isEmpty()) {
+                    for (User admin : admins) {
+                        ids.add(admin.getId());
+                        names.add(resolveNickname(admin.getId(), admin.getUsername()));
+                    }
+                }
+            } catch (Exception ignored) {
+                log.warn("查询管理员失败", ignored);
+            }
+        }
+
+        if (ids.isEmpty()) {
+            return new String[] { null, null };
+        }
+
+        return new String[] { String.join(",", ids), String.join(",", names) };
+    }
+
+    private String resolveNickname(String userId, String fallbackUsername) {
+        if (userId == null) return fallbackUsername;
+        try {
+            User user = userMapper.selectById(userId);
+            if (user != null && user.getNickname() != null && !user.getNickname().isEmpty()) {
+                return user.getNickname();
+            }
+        } catch (Exception ignored) { }
+        return fallbackUsername != null ? fallbackUsername : userId;
     }
 
     /**

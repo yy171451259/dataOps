@@ -237,9 +237,15 @@ public class PermissionRequestServiceImpl extends ServiceImpl<PermissionRequestM
 
         LambdaQueryWrapper<PermissionRequest> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(PermissionRequest::getStatus, "pending");
+        
         if (approverId != null && !approverId.isEmpty()) {
-            wrapper.eq(PermissionRequest::getApproverId, approverId);
+            wrapper.and(w -> {
+                w.eq(PermissionRequest::getApproverId, approverId);
+                w.or().apply("FIND_IN_SET({0}, approver_ids)", approverId);
+                w.or().apply("CONCAT(',', approver_ids, ',') LIKE {0}", "%," + approverId + ",%");
+            });
         }
+        
         wrapper.orderByDesc(PermissionRequest::getCreatedAt);
 
         Page<PermissionRequest> query = new Page<>(pageNum, pageSize);
