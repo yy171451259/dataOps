@@ -215,22 +215,25 @@ public class PermissionRequestController {
             req.setApplicantId(userId);
             req.setApplicantName(nickname);
 
-            // 工单标题
-            String title = dto.getTitle();
-            if (title == null || title.isEmpty()) {
-                title = String.format("【%s】申请%s的%s",
-                        resolveTypeLabel(dto.getTicketType()),
-                        resource.getSchemaName() != null ? resource.getSchemaName() : resource.getInstanceName(),
-                        formatPermissions(dto.getPermissionTypes()));
-            }
-            req.setResourceName(title);
-
             // 按资源类型设置 resourceType 和 resourceId
             String rType = resource.getResourceType();
             if (rType == null) {
                 rType = resolveResourceType(dto.getTicketType(), resource);
             }
             req.setResourceType(rType);
+
+            // 资源名称：实例名 或 实例名/Schema名
+            String resourcePath;
+            if ("instance".equals(rType)) {
+                resourcePath = resource.getInstanceName();
+            } else if (resource.getSchemaName() != null && !resource.getSchemaName().isEmpty()) {
+                resourcePath = resource.getInstanceName() + "/" + resource.getSchemaName();
+            } else {
+                resourcePath = resource.getInstanceName();
+            }
+            req.setResourceName(resourcePath);
+
+            // 按资源类型设置 resourceType 和 resourceId
             if ("instance".equals(rType)) {
                 req.setResourceId(resource.getInstanceId());
             } else if ("table".equals(rType)) {
@@ -269,12 +272,6 @@ public class PermissionRequestController {
             req.setCurrentApprovalStep(0);
             req.setExpiredAt(expireAt);
             req.setCreatedAt(java.time.LocalDateTime.now());
-
-            // 将额外信息存入 reason 前面（JSON格式存储资源明细）
-            String extraInfo = buildExtraInfo(dto, resource);
-            if (extraInfo != null) {
-                req.setReason(extraInfo + "\n" + (dto.getReason() != null ? dto.getReason() : ""));
-            }
 
             requestService.submitRequest(req);
             createdList.add(req);

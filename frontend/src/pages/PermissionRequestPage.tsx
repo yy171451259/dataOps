@@ -250,11 +250,21 @@ const PermissionRequestPage: React.FC = () => {
 
   const myColumns = [
     {
-      title: '工单号', dataIndex: 'id', key: 'id', width: 150,
+      title: '工单号', dataIndex: 'id', key: 'id', width: 80,
       render: (id: string) => <span style={{ fontFamily: 'monospace' }}>{id ? id.slice(0, 10) : '-'}</span>,
     },
     {
-      title: '资源', dataIndex: 'resourceName', key: 'resource', width: 280,
+      title: '申请原因', dataIndex: 'reason', key: 'reason', width: 240,
+      render: (t: string) => (
+          <Tooltip title={t}>
+          <span style={{ color: '#555' }}>
+            {t ? (t.length > 20 ? t.slice(0, 20) + '...' : t) : '-'}
+          </span>
+          </Tooltip>
+      ),
+    },
+    {
+      title: '资源', dataIndex: 'resourceName', key: 'resource', width: 220,
       render: (_: string, r: PermissionRequest) => (
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <Tag color="default" style={{ marginRight: 0 }}>{resourceTypeLabels[r.resourceType] || r.resourceType}</Tag>
@@ -263,17 +273,21 @@ const PermissionRequestPage: React.FC = () => {
       ),
     },
     {
-      title: '申请原因', dataIndex: 'reason', key: 'reason', width: 240,
-      render: (t: string) => (
-        <Tooltip title={t}>
-          <span style={{ color: '#555' }}>
-            {t ? (t.length > 20 ? t.slice(0, 20) + '...' : t) : '-'}
+      title: '操作类型', dataIndex: 'requestedPermissions', key: 'requestedPermissions', width: 180,
+      render: (v: string) => {
+        if (!v) return '-';
+        const perms = String(v).split(',').map((s: string) => s.trim()).filter(Boolean);
+        return (
+          <span>
+            {perms.map((p: string, i: number) => (
+              <Tag key={i} color="blue" style={{ marginRight: 4, marginBottom: 2 }}>{p}</Tag>
+            ))}
           </span>
-        </Tooltip>
-      ),
+        );
+      },
     },
     {
-      title: '当前状态', dataIndex: 'status', key: 'status', width: 100,
+      title: '当前状态', dataIndex: 'status', key: 'status', width: 80,
       render: (s: string) => {
         const st = statusMap[s] || { color: 'default', text: s };
         return <Badge status={st.color as any} text={st.text} />;
@@ -345,7 +359,7 @@ const PermissionRequestPage: React.FC = () => {
             rowKey="id"
             loading={myLoading}
             pagination={{ pageSize: 15, showTotal: (t: number) => `共 ${t} 条申请` }}
-            scroll={{ x: 1700 }}
+            scroll={{ x: 1850 }}
             size="small"
             locale={{ emptyText: <Empty description="暂无申请记录" /> }}
           />
@@ -372,7 +386,7 @@ const PermissionRequestPage: React.FC = () => {
             <Form.Item label="选择要申请的实例/Schema" required>
               <div style={{ display: 'flex', gap: 16, height: 320 }}>
                 {/* 左侧：实例列表 */}
-                <div style={{ width: 500, display: 'flex', flexDirection: 'column' }}>
+                <div style={{ width: 350, display: 'flex', flexDirection: 'column' }}>
                   <div style={{ flex: 1, border: '1px solid #d9d9d9', borderRadius: 4, padding: '4px 8px', overflow: 'auto' }}>
                     {instances.length === 0 ? (
                       <Empty description="暂无可用数据库实例" image={Empty.PRESENTED_IMAGE_SIMPLE} />
@@ -448,15 +462,6 @@ const PermissionRequestPage: React.FC = () => {
 
                 {/* 右侧：已选择的资源 */}
                 <div style={{ width: 350, display: 'flex', flexDirection: 'column' }}>
-                  <div style={{ marginBottom: 8, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                    <span style={{ fontWeight: 500 }}>已选择的实例/Schema</span>
-                    <Input
-                      placeholder="搜索"
-                      style={{ width: 120 }}
-                      size="small"
-                      prefix={<SearchOutlined />}
-                    />
-                  </div>
                   <div style={{ flex: 1, border: '1px solid #d9d9d9', borderRadius: 4, padding: '4px 8px', overflow: 'auto' }}>
                     {selectedResources.length === 0 ? (
                       <Empty description="没有查询到符合条件的数据" image={Empty.PRESENTED_IMAGE_SIMPLE} />

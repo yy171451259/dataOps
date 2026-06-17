@@ -378,7 +378,8 @@ export const pipelineApi = {
     api.post(`/pipelines/stage-executions/${id}/reject`, { comment }),
   rollbackStage: (id: string) => api.post(`/pipelines/stage-executions/${id}/rollback`),
 };
-// ============ 菜单管理 ============
+
+// ============ 菜单管理 ============
 export const menuApi = {
   getTree: () => api.get('/menus/tree'),
   getUserTree: () => api.get('/menus/user-tree'),
