@@ -267,7 +267,10 @@ public class DatabaseMonitorController {
     @Operation(summary = "表空间使用统计")
     public Result<List<Map<String, Object>>> getTableStats(
             @PathVariable String instanceId,
-            @RequestParam(required = false) String schemaName) {
+            @RequestParam(required = false) String schemaName,
+            @RequestParam(required = false) String searchKeyword,
+            @RequestParam(required = false, defaultValue = "totalSizeMb") String sortBy,
+            @RequestParam(required = false, defaultValue = "desc") String sortOrder) {
         DatabaseInstance db = databaseInstanceService.getById(instanceId);
         if (db == null) return Result.error(400, "数据库实例不存在");
 
@@ -276,17 +279,41 @@ public class DatabaseMonitorController {
         Connection conn = null;
         try {
             conn = getConnection(db, schemaName);
+            
+            StringBuilder sql = new StringBuilder();
+            sql.append("SELECT table_name, table_rows, ");
+            sql.append("ROUND(data_length/1024/1024, 2) AS data_size_mb, ");
+            sql.append("ROUND(index_length/1024/1024, 2) AS index_size_mb, ");
+            sql.append("ROUND((data_length + index_length)/1024/1024, 2) AS total_size_mb, ");
+            sql.append("auto_increment, table_comment, engine, table_collation ");
+            sql.append("FROM information_schema.tables ");
+            sql.append("WHERE table_schema = '" + dbName + "' ");
+            
+            if (searchKeyword != null && !searchKeyword.isEmpty()) {
+                sql.append("AND (table_name LIKE '%" + searchKeyword + "%' OR table_comment LIKE '%" + searchKeyword + "%') ");
+            }
+            
+            String orderColumn;
+            switch (sortBy) {
+                case "tableRows":
+                    orderColumn = "table_rows";
+                    break;
+                case "dataSizeMb":
+                    orderColumn = "data_size_mb";
+                    break;
+                case "indexSizeMb":
+                    orderColumn = "index_size_mb";
+                    break;
+                case "totalSizeMb":
+                default:
+                    orderColumn = "total_size_mb";
+                    break;
+            }
+            sql.append("ORDER BY " + orderColumn + " " + (sortOrder.equalsIgnoreCase("asc") ? "ASC" : "DESC"));
+            sql.append(" LIMIT 200");
+
             Statement stmt = conn.createStatement();
-            ResultSet rs = stmt.executeQuery(
-                "SELECT table_name, table_rows, " +
-                "ROUND(data_length/1024/1024, 2) AS data_size_mb, " +
-                "ROUND(index_length/1024/1024, 2) AS index_size_mb, " +
-                "ROUND((data_length + index_length)/1024/1024, 2) AS total_size_mb, " +
-                "auto_increment, table_comment, engine, table_collation " +
-                "FROM information_schema.tables " +
-                "WHERE table_schema = '" + dbName + "' " +
-                "ORDER BY (data_length + index_length) DESC LIMIT 100"
-            );
+            ResultSet rs = stmt.executeQuery(sql.toString());
             while (rs.next()) {
                 Map<String, Object> row = new LinkedHashMap<>();
                 row.put("tableName", rs.getString("table_name"));

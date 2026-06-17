@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Card, Select, Row, Col, Statistic, Table, Tag, Button, Space, message, Tabs, Alert, Spin, Descriptions } from 'antd';
+import { Card, Select, Row, Col, Statistic, Table, Tag, Button, Space, message, Tabs, Alert, Spin, Descriptions, Input } from 'antd';
 import { DatabaseOutlined, ReloadOutlined, StopOutlined } from '@ant-design/icons';
 import { instanceApi, dbMonitorApi } from '../utils/api';
 
@@ -20,6 +20,10 @@ const DatabaseMonitorPage: React.FC = () => {
   const [tableStats, setTableStats] = useState<any[]>([]);
   const [diagnosis, setDiagnosis] = useState<any>(null);
 
+  const [tableSearchKeyword, setTableSearchKeyword] = useState('');
+  const [tableSortBy, setTableSortBy] = useState('totalSizeMb');
+  const [tableSortOrder, setTableSortOrder] = useState('desc');
+
   useEffect(() => {
     instanceApi.list().then(res => setDatabases(res.data.data || []));
   }, []);
@@ -38,7 +42,7 @@ const DatabaseMonitorPage: React.FC = () => {
     }
   }, [selectedDb, selectedDbName, activeTab]);
 
-  const loadData = async () => {
+  const loadData = async (sortBy?: string, sortOrder?: string) => {
     if (!selectedDb) return;
     setLoading(true);
     try {
@@ -56,7 +60,13 @@ const DatabaseMonitorPage: React.FC = () => {
           setLockInfo(lockRes.data.data);
           break;
         case 'tables':
-          const tableRes = await dbMonitorApi.tableStats(selectedDb, selectedDbName);
+          const tableRes = await dbMonitorApi.tableStats(
+            selectedDb, 
+            selectedDbName, 
+            tableSearchKeyword || undefined, 
+            sortBy || tableSortBy, 
+            sortOrder || tableSortOrder
+          );
           setTableStats(tableRes.data.data || []);
           break;
         case 'diagnosis':
@@ -253,6 +263,40 @@ const DatabaseMonitorPage: React.FC = () => {
           </TabPane>
 
           <TabPane tab="表统计" key="tables">
+            <div style={{ marginBottom: 16 }}>
+              <Row gutter={16} align="middle">
+                <Col flex="auto">
+                  <Input.Search
+                    placeholder="表名或备注模糊搜索"
+                    value={tableSearchKeyword}
+                    onChange={e => setTableSearchKeyword(e.target.value)}
+                    onSearch={() => loadData()}
+                    style={{ width: 300 }}
+                  />
+                </Col>
+                <Col flex="none">
+                  <Select
+                    style={{ width: 120 }}
+                    value={tableSortBy}
+                    onChange={v => { setTableSortBy(v); loadData(v, tableSortOrder); }}
+                  >
+                    <Option value="totalSizeMb">总大小</Option>
+                    <Option value="dataSizeMb">数据大小</Option>
+                    <Option value="tableRows">行数</Option>
+                  </Select>
+                </Col>
+                <Col flex="none">
+                  <Select
+                    style={{ width: 100 }}
+                    value={tableSortOrder}
+                    onChange={v => { setTableSortOrder(v); loadData(tableSortBy, v); }}
+                  >
+                    <Option value="desc">降序</Option>
+                    <Option value="asc">升序</Option>
+                  </Select>
+                </Col>
+              </Row>
+            </div>
             <Spin spinning={loading}>
               {tableStats.length > 0 ? (
                 <Table

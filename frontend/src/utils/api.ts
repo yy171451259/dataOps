@@ -234,8 +234,14 @@ export const dbMonitorApi = {
     api.get(`/db-monitor/${instanceId}/slow-queries`, { params: { schemaName, limit } }),
   locks: (instanceId: string, schemaName?: string) =>
     api.get(`/db-monitor/${instanceId}/locks`, { params: { schemaName } }),
-  tableStats: (instanceId: string, schemaName?: string) =>
-    api.get(`/db-monitor/${instanceId}/table-stats`, { params: { schemaName } }),
+  tableStats: (instanceId: string, schemaName?: string, searchKeyword?: string, sortBy?: string, sortOrder?: string) => {
+    const params: any = {};
+    if (schemaName) params.schemaName = schemaName;
+    if (searchKeyword) params.searchKeyword = searchKeyword;
+    if (sortBy) params.sortBy = sortBy;
+    if (sortOrder) params.sortOrder = sortOrder;
+    return api.get(`/db-monitor/${instanceId}/table-stats`, { params });
+  },
   diagnosis: (instanceId: string, schemaName?: string) =>
     api.get(`/db-monitor/${instanceId}/diagnosis`, { params: { schemaName } }),
   killProcess: (instanceId: string, processId: number, schemaName?: string) =>

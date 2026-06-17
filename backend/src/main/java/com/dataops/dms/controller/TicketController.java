@@ -104,17 +104,21 @@ public class TicketController {
 
     /**
      * 获取我的待审批工单（分页）
+     * 管理员可查看所有待审批工单，普通用户仅看自己为审批人的工单
      */
     @GetMapping("/pending")
     @Operation(summary = "我的待审批")
     public Result<PageResult<Ticket>> getMyPendingTickets(HttpServletRequest request,
             @RequestParam(defaultValue = "1") Integer page,
             @RequestParam(defaultValue = "15") Integer size) {
-        String approverId = (String) request.getAttribute("userId");
-        if (approverId == null) {
-            approverId = "user_admin";
+        String userId = (String) request.getAttribute("userId");
+        Boolean isAdmin = (Boolean) request.getAttribute("isAdmin");
+        if (userId == null) {
+            userId = "user_admin";
         }
-        PageResult<Ticket> pageResult = ticketService.getMyPendingTicketsPage(approverId, page, size);
+        // 管理员看全部 pending，普通用户只看自己是审批人的工单
+        PageResult<Ticket> pageResult = ticketService.getMyPendingTicketsPage(
+                Boolean.TRUE.equals(isAdmin) ? null : userId, page, size);
         return Result.success(pageResult);
     }
 

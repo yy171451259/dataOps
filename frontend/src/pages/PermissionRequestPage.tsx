@@ -463,7 +463,7 @@ const PermissionRequestPage: React.FC = () => {
                 <div style={{ width: 350, display: 'flex', flexDirection: 'column' }}>
                   <div style={{ flex: 1, border: '1px solid #d9d9d9', borderRadius: 4, padding: '4px 8px', overflow: 'auto' }}>
                     {selectedResources.length === 0 ? (
-                      <Empty description="没有查询到符合条件的数据" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+                      <Empty description="暂无已选择的资源" image={Empty.PRESENTED_IMAGE_SIMPLE} />
                     ) : (
                       <div>
                         {/* 已选资源列表 */}

@@ -158,6 +158,11 @@ public class AuthServiceImpl implements AuthService {
     }
 
     @Override
+    public String getDingTalkAuthUrl(String state, String redirectUri) {
+        return dingTalkOAuthService.getAuthUrl(state, redirectUri);
+    }
+
+    @Override
     public Result<Map<String, Object>> dingTalkLogin(String authCode) {
         try {
             // 1. 通过授权码获取钉钉用户信息

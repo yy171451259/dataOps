@@ -16,6 +16,15 @@ public interface DingTalkOAuthService {
     String getAuthUrl(String state);
 
     /**
+     * 获取钉钉授权URL（支持自定义回调地址）
+     *
+     * @param state 状态参数
+     * @param redirectUri 自定义回调地址
+     * @return 授权URL
+     */
+    String getAuthUrl(String state, String redirectUri);
+
+    /**
      * 通过授权码获取用户信息
      *
      * @param authCode 授权码

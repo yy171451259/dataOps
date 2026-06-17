@@ -8,11 +8,15 @@ import com.dataops.dms.common.result.PageResult;
 import com.dataops.dms.dto.TicketCreateDTO;
 import com.dataops.dms.entity.DataChangeBackup;
 import com.dataops.dms.entity.DatabaseInstance;
+import com.dataops.dms.entity.ResourceOwner;
 import com.dataops.dms.entity.Ticket;
 import com.dataops.dms.entity.TicketApproval;
+import com.dataops.dms.entity.User;
 import com.dataops.dms.mapper.TicketMapper;
+import com.dataops.dms.mapper.UserMapper;
 import com.dataops.dms.service.DataBackupService;
 import com.dataops.dms.service.DatabaseInstanceService;
+import com.dataops.dms.service.ResourceOwnerService;
 import com.dataops.dms.service.TicketApprovalService;
 import com.dataops.dms.service.TicketService;
 import com.dataops.dms.sql.LockFreeDmlEngine;
@@ -68,6 +72,12 @@ public class TicketServiceImpl extends ServiceImpl<TicketMapper, Ticket> impleme
 
     @Resource
     private SqlExecutor sqlExecutor;
+
+    @Resource
+    private ResourceOwnerService resourceOwnerService;
+
+    @Resource
+    private UserMapper userMapper;
 
     /**
      * 无锁DML执行控制信号：ticketId -> 暂停信号
@@ -129,7 +139,10 @@ public class TicketServiceImpl extends ServiceImpl<TicketMapper, Ticket> impleme
             log.warn("预估影响 {} 行(>1万行)，强烈建议开启无锁DML分批执行", estimateAffectedRows);
         }
 
-        // 6. Create ticket
+        // 6. 查找审批人（参考权限申请的三级回退机制）
+        String approverId = resolveApprover(dto);
+        
+        // 7. Create ticket
         Ticket ticket = new Ticket();
         ticket.setId(TicketIdGenerator.generate());
         ticket.setType("data_change");
@@ -138,6 +151,7 @@ public class TicketServiceImpl extends ServiceImpl<TicketMapper, Ticket> impleme
         ticket.setStatus("pending");
         ticket.setPriority(dto.getPriority() != null ? dto.getPriority() : "normal");
         ticket.setCreatorId(creatorId);
+        ticket.setCurrentApproverId(approverId);
         ticket.setInstanceId(dto.getInstanceId());
         ticket.setSchemaName(dto.getSchemaName());
         ticket.setSqlContent(dto.getSqlContent());
@@ -164,8 +178,8 @@ public class TicketServiceImpl extends ServiceImpl<TicketMapper, Ticket> impleme
         ticket.setCreateTime(LocalDateTime.now());
         
         this.save(ticket);
-        log.info("工单创建成功: {}, 数据库: {}, OnlineDDL: {}, 无锁DML: {}, 预估影响行数: {}, 审批截止: {}",
-            ticket.getId(), dto.getInstanceId(), dto.getUseOnlineDdl(), dto.getUseLockFreeDml(),
+        log.info("工单创建成功: {}, 数据库: {}, 审批人: {}, OnlineDDL: {}, 无锁DML: {}, 预估影响行数: {}, 审批截止: {}",
+            ticket.getId(), dto.getInstanceId(), approverId, dto.getUseOnlineDdl(), dto.getUseLockFreeDml(),
             estimateAffectedRows, approvalDeadline);
         return ticket;
     }
@@ -774,8 +788,11 @@ public class TicketServiceImpl extends ServiceImpl<TicketMapper, Ticket> impleme
     @Override
     public List<Ticket> getMyPendingTickets(String approverId) {
         LambdaQueryWrapper<Ticket> wrapper = new LambdaQueryWrapper<>();
-        wrapper.eq(Ticket::getStatus, "pending")
-               .orderByDesc(Ticket::getCreateTime);
+        wrapper.eq(Ticket::getStatus, "pending");
+        if (approverId != null && !approverId.isEmpty()) {
+            wrapper.eq(Ticket::getCurrentApproverId, approverId);
+        }
+        wrapper.orderByDesc(Ticket::getCreateTime);
         return this.list(wrapper);
     }
 
@@ -785,8 +802,12 @@ public class TicketServiceImpl extends ServiceImpl<TicketMapper, Ticket> impleme
         Integer pageSize = size == null || size <= 0 ? 15 : (size > 200 ? 200 : size);
 
         LambdaQueryWrapper<Ticket> wrapper = new LambdaQueryWrapper<>();
-        wrapper.eq(Ticket::getStatus, "pending")
-               .orderByDesc(Ticket::getCreateTime);
+        wrapper.eq(Ticket::getStatus, "pending");
+        // 按审批人过滤：管理员传 null 看全部，普通用户只看自己是审批人的工单
+        if (approverId != null && !approverId.isEmpty()) {
+            wrapper.eq(Ticket::getCurrentApproverId, approverId);
+        }
+        wrapper.orderByDesc(Ticket::getCreateTime);
 
         Page<Ticket> query = new Page<>(pageNum, pageSize);
         IPage<Ticket> result = this.page(query, wrapper);
@@ -896,10 +917,13 @@ public class TicketServiceImpl extends ServiceImpl<TicketMapper, Ticket> impleme
             ticket.setStatus((String) updates.get("status"));
         }
         if (updates.containsKey("executeResult")) {
-            ticket.setExecuteResult((String) updates.get("executeResult"));
+            ticket.setErrorMsg((String) updates.get("executeResult"));
         }
         if (updates.containsKey("executeTime")) {
-            ticket.setExecuteTime((String) updates.get("executeTime"));
+            String timeStr = (String) updates.get("executeTime");
+            if (timeStr != null && !timeStr.isEmpty()) {
+                ticket.setExecuteTime(java.time.LocalDateTime.parse(timeStr));
+            }
         }
         if (updates.containsKey("affectedRows")) {
             Object val = updates.get("affectedRows");
@@ -1046,6 +1070,56 @@ public class TicketServiceImpl extends ServiceImpl<TicketMapper, Ticket> impleme
         props.put("password", db.getPassword());
         
         return DriverManager.getConnection(url, props);
+    }
+
+    /**
+     * 查找数据变更工单的审批人（三级回退机制，参考权限申请）
+     * 1) 优先：查 sys_resource_owner 表，匹配当前 Schema 的 Owner
+     * 2) 回退：查 sys_resource_owner 表，匹配父级 Instance 的 Owner
+     * 3) 兜底：取第一个 is_admin=true 的系统管理员
+     *
+     * @param dto 工单创建DTO（包含 instanceId 和 schemaName）
+     * @return 审批人ID，未找到返回 null
+     */
+    private String resolveApprover(TicketCreateDTO dto) {
+        String instanceId = dto.getInstanceId();
+        String schemaName = dto.getSchemaName();
+
+        // 1) 查 Schema 级别 Owner：resourceType=schema, resourceId=instanceId:schemaName
+        if (schemaName != null && !schemaName.isEmpty()) {
+            String schemaResourceId = instanceId + ":" + schemaName;
+            List<ResourceOwner> schemaOwners = resourceOwnerService.listByResource("schema", schemaResourceId);
+            if (schemaOwners != null && !schemaOwners.isEmpty()) {
+                return schemaOwners.get(0).getOwnerUserId();
+            }
+            // 也尝试仅用 schemaName 匹配
+            List<ResourceOwner> schemaNameOwners = resourceOwnerService.listByResource("schema", schemaName);
+            if (schemaNameOwners != null && !schemaNameOwners.isEmpty()) {
+                return schemaNameOwners.get(0).getOwnerUserId();
+            }
+        }
+
+        // 2) 查 Instance 级别 Owner（回退）
+        if (instanceId != null && !instanceId.isEmpty()) {
+            List<ResourceOwner> instanceOwners = resourceOwnerService.listByResource("instance", instanceId);
+            if (instanceOwners != null && !instanceOwners.isEmpty()) {
+                return instanceOwners.get(0).getOwnerUserId();
+            }
+        }
+
+        // 3) 管理员兜底
+        try {
+            LambdaQueryWrapper<User> wrapper = new LambdaQueryWrapper<>();
+            wrapper.eq(User::getIsAdmin, true).last("LIMIT 1");
+            User admin = userMapper.selectOne(wrapper);
+            if (admin != null) {
+                return admin.getId();
+            }
+        } catch (Exception ignored) {
+            log.warn("查询管理员失败", ignored);
+        }
+
+        return null;
     }
 
     /**
