@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useMemo } from 'react';
-import { Layout, Menu, theme, ConfigProvider, Avatar, Dropdown, Badge, message } from 'antd';
+import { Layout, Menu, theme, ConfigProvider, Avatar, Dropdown, Badge, message, Tabs, Button } from 'antd';
 import {
   DatabaseOutlined, FileSearchOutlined, AuditOutlined, CheckSquareOutlined,
   UserOutlined, SettingOutlined, SafetyOutlined, LogoutOutlined,
@@ -7,6 +7,7 @@ import {
   ThunderboltOutlined, BuildOutlined, ImportOutlined, LineChartOutlined,
   TeamOutlined, CrownOutlined, EyeInvisibleOutlined,
   SendOutlined, FilterOutlined, MenuFoldOutlined, MenuUnfoldOutlined,
+  CloseOutlined,
 } from '@ant-design/icons';
 import { Routes, Route, useNavigate, useLocation, Navigate } from 'react-router-dom';
 import { useAuthStore } from './store/useAuthStore';
@@ -24,10 +25,7 @@ import DataQualityPage from './pages/DataQualityPage';
 import UserManagementPage from './pages/UserManagementPage';
 import NotificationSettingsPage from './pages/NotificationSettingsPage';
 import PipelinePage from './pages/PipelinePage';
-// import SchemaDesignerPage from './pages/SchemaDesignerPage'; // TODO: 修复编码后恢复
 import SystemSettingsPage from './pages/SystemSettingsPage';
-// import DatabaseMonitorPage from './pages/DatabaseMonitorPage'; // TODO: 修复编码后恢复
-// import DataImportPage from './pages/DataImportPage'; // TODO: 修复编码后恢复
 import ResourceOwnerPage from './pages/ResourceOwnerPage';
 import SensitiveDataPage from './pages/SensitiveDataPage';
 import PermissionRequestPage from './pages/PermissionRequestPage';
@@ -39,6 +37,54 @@ import './index.css';
 
 const { Sider, Content } = Layout;
 
+const pageComponents: Record<string, React.FC> = {
+  '/dashboard': DashboardPage,
+  '/sql': SqlEditor,
+  '/databases': DatabaseList,
+  '/pipeline': PipelinePage,
+  '/metadata': MetadataPage,
+  '/tickets': TicketList,
+  '/audit': AuditList,
+  '/masking': DataMaskingPage,
+  '/quality': DataQualityPage,
+  '/resource-owners': ResourceOwnerPage,
+  '/sensitive-data': SensitiveDataPage,
+  '/permission-requests': PermissionRequestPage,
+  '/row-controls': RowControlPage,
+  '/users': UserManagementPage,
+  '/roles': RoleManagementPage,
+  '/notifications': NotificationSettingsPage,
+  '/settings': SystemSettingsPage,
+  '/menus': MenuManagementPage,
+};
+
+const pageLabels: Record<string, string> = {
+  '/dashboard': '数据看板',
+  '/sql': 'SQL查询',
+  '/databases': '数据源管理',
+  '/pipeline': '数据管道',
+  '/metadata': '元数据管理',
+  '/tickets': '数据变更工单',
+  '/audit': '审计日志',
+  '/masking': '数据脱敏',
+  '/quality': '数据质量',
+  '/resource-owners': '资源负责人',
+  '/sensitive-data': '敏感数据管理',
+  '/permission-requests': '权限申请',
+  '/row-controls': '行级控制',
+  '/users': '用户管理',
+  '/roles': '角色管理',
+  '/notifications': '通知设置',
+  '/settings': '系统设置',
+  '/menus': '菜单管理',
+};
+
+interface TabItem {
+  key: string;
+  label: string;
+  path: string;
+}
+
 const ProtectedLayout: React.FC = () => {
   const [collapsed, setCollapsed] = useState(false);
   const navigate = useNavigate();
@@ -46,6 +92,11 @@ const ProtectedLayout: React.FC = () => {
   const { user, logout, hasPermission, menus } = useAuthStore();
   const { token: { colorBgContainer, borderRadiusLG } } = theme.useToken();
   const [pendingCount, setPendingCount] = useState(0);
+
+  const [tabs, setTabs] = useState<TabItem[]>([
+    { key: '/dashboard', label: '数据看板', path: '/dashboard' },
+  ]);
+  const [activeTabKey, setActiveTabKey] = useState('/dashboard');
 
   useEffect(() => {
     if (!hasPermission('ticket:approve')) return;
@@ -67,7 +118,6 @@ const ProtectedLayout: React.FC = () => {
     return () => clearInterval(timer);
   }, [hasPermission]);
 
-  // 根据后端菜单数据结构转换为 Ant Design Menu items 格式
   const convertToMenuItems = (menuTree: any[]): any[] => {
     if (!menuTree || !Array.isArray(menuTree)) return [];
     return menuTree
@@ -84,7 +134,6 @@ const ProtectedLayout: React.FC = () => {
     if (menus && menus.length > 0) {
       return convertToMenuItems(menus);
     }
-    // 默认，如果菜单数据还未加载，返回空数组
     return [];
   }, [menus]);
 
@@ -99,6 +148,45 @@ const ProtectedLayout: React.FC = () => {
     { key: 'divider', type: 'divider' as const },
     { key: 'logout', label: '退出登录', icon: <LogoutOutlined />, danger: true },
   ];
+
+  const handleMenuClick = ({ key }: { key: string }) => {
+    if (!pageComponents[key]) {
+      navigate(key);
+      return;
+    }
+
+    const existingTab = tabs.find(tab => tab.key === key);
+    if (existingTab) {
+      setActiveTabKey(key);
+    } else {
+      const newTab: TabItem = {
+        key,
+        label: pageLabels[key] || key,
+        path: key,
+      };
+      setTabs([...tabs, newTab]);
+      setActiveTabKey(key);
+    }
+  };
+
+  const handleTabChange = (key: string) => {
+    setActiveTabKey(key);
+  };
+
+  const handleTabClose = (key: string) => {
+    if (tabs.length === 1) {
+      message.info('至少保留一个标签页');
+      return;
+    }
+
+    const newTabs = tabs.filter(tab => tab.key !== key);
+    setTabs(newTabs);
+
+    if (activeTabKey === key) {
+      const newActiveKey = newTabs[newTabs.length - 1].key;
+      setActiveTabKey(newActiveKey);
+    }
+  };
 
   return (
     <Layout style={{ height: '100vh', overflow: 'hidden' }}>
@@ -120,7 +208,7 @@ const ProtectedLayout: React.FC = () => {
           </div>
           <div style={{ flex: 1, overflow: 'auto', minHeight: 0 }}>
             <Menu
-              theme="dark" selectedKeys={[location.pathname]} mode="inline"
+              theme="dark" selectedKeys={[activeTabKey]} mode="inline"
               defaultOpenKeys={useMemo(() => {
                 const openKeys: string[] = [];
                 const findParentKeys = (tree: any[], targetPath: string): boolean => {
@@ -137,13 +225,12 @@ const ProtectedLayout: React.FC = () => {
                   }
                   return false;
                 };
-                findParentKeys(menus, location.pathname);
+                findParentKeys(menus, activeTabKey);
                 return openKeys;
-              }, [menus, location.pathname])}
-              items={visibleMenuItems} onClick={({ key }) => navigate(key)}
+              }, [menus, activeTabKey])}
+              items={visibleMenuItems} onClick={handleMenuClick}
             />
           </div>
-          {/* 用户信息 - 固定在侧边栏底部 */}
           <div style={{ flexShrink: 0, borderTop: '1px solid rgba(255,255,255,0.1)' }}>
             <Dropdown menu={{ items: userMenuItems, onClick: ({ key }) => { if (key === 'logout') handleLogout(); } }} placement="topRight" trigger={['click']}>
               <div style={{
@@ -155,7 +242,7 @@ const ProtectedLayout: React.FC = () => {
                   {!collapsed && <span style={{ color: 'rgba(255,255,255,0.75)', fontSize: 13, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{user?.nickname || user?.username || '用户'}</span>}
                 </div>
                 {!collapsed && pendingCount > 0 && hasPermission('ticket:approve') && (
-                  <div onClick={(e) => { e.stopPropagation(); navigate('/dashboard'); }} style={{ cursor: 'pointer', padding: '4px' }}>
+                  <div onClick={(e) => { e.stopPropagation(); handleMenuClick({ key: '/dashboard' }); }} style={{ cursor: 'pointer', padding: '4px' }}>
                     <Badge count={pendingCount} size="small" offset={[4, 0]}>
                       <BellOutlined style={{ color: 'rgba(255,255,255,0.65)', fontSize: 18 }} />
                     </Badge>
@@ -167,32 +254,51 @@ const ProtectedLayout: React.FC = () => {
         </div>
       </Sider>
       <Layout>
-        <Content style={{ margin: '16px', padding: 24, flex: 1, background: colorBgContainer, borderRadius: borderRadiusLG, overflow: 'hidden' }}>
-          <Routes>
-            <Route path="/dashboard" element={<DashboardPage />} />
-            <Route path="/sql" element={<SqlEditor />} />
-            <Route path="/databases" element={<DatabaseList />} />
-            {/* <Route path="/schema-designer" element={<SchemaDesignerPage />} /> */}
-            {/* <Route path="/import" element={<DataImportPage />} /> */}
-            {/* <Route path="/monitor" element={<DatabaseMonitorPage />} /> */}
-            <Route path="/pipeline" element={<PipelinePage />} />
-            <Route path="/metadata" element={<MetadataPage />} />
-            <Route path="/tickets" element={<TicketList />} />
-
-            <Route path="/audit" element={<AuditList />} />
-            <Route path="/masking" element={<DataMaskingPage />} />
-            <Route path="/quality" element={<DataQualityPage />} />
-            <Route path="/resource-owners" element={<ResourceOwnerPage />} />
-            <Route path="/sensitive-data" element={<SensitiveDataPage />} />
-            <Route path="/permission-requests" element={<PermissionRequestPage />} />
-            <Route path="/row-controls" element={<RowControlPage />} />
-            <Route path="/users" element={<UserManagementPage />} />
-            <Route path="/roles" element={<RoleManagementPage />} />
-            <Route path="/notifications" element={<NotificationSettingsPage />} />
-            <Route path="/settings" element={<SystemSettingsPage />} />
-            <Route path="/menus" element={<MenuManagementPage />} />
-            <Route path="/" element={<Navigate to="/dashboard" replace />} />
-          </Routes>
+        <Content style={{ margin: '16px', padding: 0, flex: 1, background: colorBgContainer, borderRadius: borderRadiusLG, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+          <Tabs
+            activeKey={activeTabKey}
+            onChange={handleTabChange}
+            type="card"
+            items={tabs.map(tab => ({
+              key: tab.key,
+              label: (
+                <span>
+                  {tab.label}
+                  {tab.key !== '/dashboard' && (
+                    <Button
+                      type="text"
+                      icon={<CloseOutlined />}
+                      size="small"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleTabClose(tab.key);
+                      }}
+                      style={{ marginLeft: 8, padding: 0 }}
+                    />
+                  )}
+                </span>
+              ),
+            }))}
+            style={{ borderBottom: '1px solid #f0f0f0' }}
+          />
+          <div style={{ flex: 1, overflow: 'auto', padding: '16px 24px' }}>
+            {tabs.map(tab => {
+              const Component = pageComponents[tab.key];
+              if (!Component) return null;
+              return (
+                <div
+                  key={tab.key}
+                  style={{
+                    display: activeTabKey === tab.key ? 'block' : 'none',
+                    height: '100%',
+                    overflow: 'auto',
+                  }}
+                >
+                  <Component />
+                </div>
+              );
+            })}
+          </div>
         </Content>
       </Layout>
     </Layout>

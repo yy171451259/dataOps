@@ -479,7 +479,7 @@ const SqlEditor: React.FC<SqlEditorProps> = () => {
     instanceApi.list().then(res => {
       const list = res.data.data || [];
       setDatabases(list);
-      if (list.length > 0 && (!activeTabData?.databaseId || !currentDbExists)) {
+      if (list.length > 0 && !activeTabData?.databaseId) {
         const firstDb = list[0];
         updateTab(activeTab, { databaseId: firstDb.id, databaseName: undefined });
       }
