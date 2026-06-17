@@ -20,7 +20,7 @@ public interface MetadataService {
     /**
      * 采集指定数据库的元数据
      */
-    Result<Integer> collectMetadata(String databaseId, String databaseName);
+    Result<Integer> collectMetadata(String databaseId, String schemaName);
 
     /**
      * 获取表列表

@@ -35,13 +35,13 @@ public class MetadataServiceImpl implements MetadataService {
     }
 
     @Override
-    public Result<Integer> collectMetadata(String databaseId, String databaseName) {
+    public Result<Integer> collectMetadata(String databaseId, String schemaName) {
         DatabaseInstance db = databaseInstanceService.getById(databaseId);
         if (db == null) {
             return Result.error("数据库实例不存在");
         }
 
-        String targetDb = databaseName != null ? databaseName : db.getDefaultSchemaName();
+        String targetDb = schemaName != null ? schemaName : db.getDefaultSchemaName();
         if (targetDb == null || targetDb.isEmpty()) {
             return Result.error("未指定数据库名，请在实例配置中填写默认数据库或选择数据库");
         }
@@ -130,7 +130,7 @@ public class MetadataServiceImpl implements MetadataService {
             }
 
             String msg = "元数据采集完成，共 " + tableCount + " 张表， " + columnList.size() + " 个字段";
-            if (databaseName != null) msg += "（数据库:" + databaseName + "）";
+            if (schemaName != null) msg += "（Schema:" + schemaName + "）";
             return Result.success(msg, tableCount);
 
         } catch (Exception e) {

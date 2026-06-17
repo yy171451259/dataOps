@@ -27,8 +27,8 @@ public class MetadataController {
     @Operation(summary = "采集数据库元数据")
     public Result<Integer> collect(@PathVariable String databaseId,
                                    @RequestBody(required = false) Map<String, String> body) {
-        String databaseName = (body != null) ? body.get("databaseName") : null;
-        return metadataService.collectMetadata(databaseId, databaseName);
+        String schemaName = (body != null) ? body.get("schemaName") : null;
+        return metadataService.collectMetadata(databaseId, schemaName);
     }
 
     @GetMapping("/tables")
@@ -38,8 +38,8 @@ public class MetadataController {
             @RequestParam(defaultValue = "20") Integer size,
             @RequestParam(required = false) String databaseId,
             @RequestParam(required = false) String keyword,
-            @RequestParam(required = false) String databaseName) {
-        return metadataService.listTables(page, size, databaseId, keyword, databaseName);
+            @RequestParam(required = false) String schemaName) {
+        return metadataService.listTables(page, size, databaseId, keyword, schemaName);
     }
 
     @GetMapping("/tables/{tableId}")
@@ -96,7 +96,7 @@ public class MetadataController {
     @GetMapping("/export-dictionary/{databaseId}")
     @Operation(summary = "导出数据字典")
     public void exportDictionary(@PathVariable String databaseId,
-                                 @RequestParam(required = false) String databaseName,
+                                 @RequestParam(required = false) String schemaName,
                                  HttpServletResponse response) {
         try {
             response.setContentType("text/csv;charset=UTF-8");
@@ -108,7 +108,7 @@ public class MetadataController {
             writer.write("\uFEFF");
             writer.println("表名,表注释,字段名,字段类型,字段长度,是否可空,是否主键,字段注释,业务名称,是否敏感");
 
-            Result<Page<MetadataTable>> tablesResult = metadataService.listTables(1, 1000, databaseId, null, databaseName);
+            Result<Page<MetadataTable>> tablesResult = metadataService.listTables(1, 1000, databaseId, null, schemaName);
             if (tablesResult.getData() != null && tablesResult.getData().getRecords() != null) {
                 for (MetadataTable table : tablesResult.getData().getRecords()) {
                     Result<List<MetadataColumn>> colsResult = metadataService.listColumns(table.getId());

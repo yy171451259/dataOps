@@ -15,7 +15,7 @@ const formatSize = (bytes: number): string => {
 const MetadataPage: React.FC = () => {
   const [databases, setDatabases] = useState<any[]>([]);
   const [selectedDb, setSelectedDb] = useState<string>();
-  const [selectedDatabaseName, setSelectedDatabaseName] = useState<string>();
+  const [selectedSchemaName, setSelectedSchemaName] = useState<string>();
   const [dbNames, setDbNames] = useState<string[]>([]);
   const [loadingDbNames, setLoadingDbNames] = useState(false);
   const [tables, setTables] = useState<any[]>([]);
@@ -39,14 +39,14 @@ const MetadataPage: React.FC = () => {
     } else {
       setDbNames([]);
     }
-    setSelectedDatabaseName(undefined);
+    setSelectedSchemaName(undefined);
   }, [selectedDb]);
 
   const handleCollect = async () => {
     if (!selectedDb) return;
     setCollecting(true);
     try {
-      const res = await metadataApi.collect(selectedDb, selectedDatabaseName);
+      const res = await metadataApi.collect(selectedDb, selectedSchemaName);
       message.success(res.data.message || '采集完成');
       loadTables();
     } catch {
@@ -61,8 +61,8 @@ const MetadataPage: React.FC = () => {
     setLoading(true);
     try {
       const params: any = { databaseId: selectedDb, page: 1, size: 9999 };
-      if (selectedDatabaseName) {
-        params.databaseName = selectedDatabaseName;
+      if (selectedSchemaName) {
+        params.schemaName = selectedSchemaName;
       }
       const res = await metadataApi.listTables(params);
       setTables(res.data.data?.records || []);
@@ -124,8 +124,8 @@ const MetadataPage: React.FC = () => {
             <Select
               style={{ width: 160 }}
               placeholder="选择数据库"
-              value={selectedDatabaseName}
-              onChange={(v) => { setSelectedDatabaseName(v); }}
+              value={selectedSchemaName}
+              onChange={(v) => { setSelectedSchemaName(v); }}
               options={dbNames.map(d => ({ label: d, value: d }))}
               loading={loadingDbNames}
               disabled={!selectedDb}
