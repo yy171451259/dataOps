@@ -82,10 +82,10 @@ permission:
 
 # 钉钉配置
 dingtalk:
-  app-key: your-dingtalk-app-key  # 钉钉AppKey（需要在钉钉开放平台申请）
-  app-secret: your-dingtalk-app-secret  # 钉钉AppSecret
-  corp-id: your-dingtalk-corp-id  # 钉钉企业ID
-  redirect-uri: http://localhost:3000/login/dingtalk/callback  # 回调地址（前端地址）
+  app-key: ding4qjk3rhfugqtgghs
+  app-secret: Gt6PE34v46_p2U0fUS7l1p7z3i6yK0hezYFXr9AVn_05sNxG4MyVJMdChtIVo4_W
+  corp-id: dingb8846e900bf758c535c2f4657eb6378f  # 需要在企业信息页面获取
+  redirect-uri: http://wxdev.worldunion.com.cn/yangxy/login/dingtalk/callback  # 需要替换为你的公网域名
   auth-url: https://login.dingtalk.com/oauth2/auth
   token-url: https://api.dingtalk.com/v1.0/oauth2/userAccessToken
   user-info-url: https://api.dingtalk.com/v1.0/contact/users/me

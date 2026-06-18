@@ -31,9 +31,15 @@ public class DingTalkOAuthServiceImpl implements DingTalkOAuthService {
         String uri = redirectUri != null && !redirectUri.isEmpty() 
             ? redirectUri 
             : dingTalkConfig.getRedirectUri();
-        return String.format("%s?redirect_uri=%s&response_type=code&client_id=%s&scope=openid&state=%s&prompt=consent",
+        String encodedUri;
+        try {
+            encodedUri = java.net.URLEncoder.encode(uri, "UTF-8");
+        } catch (java.io.UnsupportedEncodingException e) {
+            encodedUri = uri;
+        }
+        return String.format("%s?redirect_uri=%s&response_type=code&client_id=%s&scope=openid+profile&state=%s&prompt=consent",
                 dingTalkConfig.getAuthUrl(),
-                uri,
+                encodedUri,
                 dingTalkConfig.getAppKey(),
                 state);
     }
@@ -66,6 +72,7 @@ public class DingTalkOAuthServiceImpl implements DingTalkOAuthService {
         );
 
         if (response.getStatusCode() == HttpStatus.OK) {
+            @SuppressWarnings("unchecked")
             Map<String, Object> result = JSON.parseObject(response.getBody(), Map.class);
             return result;
         } else {
@@ -97,6 +104,7 @@ public class DingTalkOAuthServiceImpl implements DingTalkOAuthService {
         );
 
         if (response.getStatusCode() == HttpStatus.OK) {
+            @SuppressWarnings("unchecked")
             Map<String, Object> result = JSON.parseObject(response.getBody(), Map.class);
             return (String) result.get("accessToken");
         } else {
