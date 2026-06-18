@@ -3,6 +3,7 @@ import ReactDOM from 'react-dom/client';
 import { BrowserRouter } from 'react-router-dom';
 import { loader } from '@monaco-editor/react';
 import * as monaco from 'monaco-editor';
+import { getBasePath } from './utils/basePath';
 import App from './App';
 import './index.css';
 
@@ -11,7 +12,7 @@ loader.config({ monaco });
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
-    <BrowserRouter>
+    <BrowserRouter basename={getBasePath()}>
       <App />
     </BrowserRouter>
   </React.StrictMode>

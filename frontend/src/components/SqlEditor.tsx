@@ -1533,7 +1533,7 @@ const SqlEditor: React.FC<SqlEditorProps> = () => {
                           size="small"
 
                           pagination={false}
-
+                          virtual
                           scroll={{ x: Math.max(800, cols.length * 150), y: Math.max(200, 300) }}
 
                           bordered

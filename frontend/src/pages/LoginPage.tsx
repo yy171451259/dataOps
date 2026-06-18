@@ -16,7 +16,7 @@ const LoginPage: React.FC = () => {
 
   // 处理钉钉登录回调
   useEffect(() => {
-    const authCode = searchParams.get('authCode');
+    const authCode = searchParams.get('authCode') || searchParams.get('code');
     if (authCode) {
       handleDingTalkCallback(authCode);
     }

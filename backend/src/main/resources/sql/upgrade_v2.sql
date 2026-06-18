@@ -16,6 +16,3 @@ ALTER TABLE ticket ADD COLUMN dml_batch_size INT DEFAULT 1000 COMMENT 'DML批次
 ALTER TABLE ticket ADD COLUMN dml_batch_interval INT DEFAULT 100 COMMENT 'DML批次间隔毫秒' AFTER dml_batch_size;
 ALTER TABLE ticket ADD COLUMN dml_batch_count INT DEFAULT 0 COMMENT 'DML执行批次计数' AFTER dml_batch_interval;
 ALTER TABLE ticket ADD COLUMN dml_total_affected BIGINT DEFAULT 0 COMMENT 'DML累计影响行数' AFTER dml_batch_count;
-
--- 修复 metadata_column.column_length 字段类型，防止 LONGTEXT/LONGBLOB 长度溢出
-ALTER TABLE metadata_column MODIFY COLUMN column_length BIGINT COMMENT '长度';

@@ -247,14 +247,4 @@ SELECT 'V4 权限控制细化升级完成！新增: sys_user, sys_role, sys_perm
 -- 12. 修复元数据采集后查询失败的脏数据
 --     (deleted字段未设置导致逻辑删除 WHERE deleted=0 过滤掉 NULL 值)
 -- =============================================
-UPDATE `metadata_table` SET `deleted` = 0 WHERE `deleted` IS NULL;
-UPDATE `metadata_column` SET `deleted` = 0 WHERE `deleted` IS NULL;
 UPDATE `data_change_backup` SET `deleted` = 0 WHERE `deleted` IS NULL;
-
--- =============================================
--- 13. 补充 metadata_table / metadata_column 缺失字段
---     (实体类新增字段但数据库表未同步)
--- =============================================
-ALTER TABLE `metadata_table` ADD COLUMN IF NOT EXISTS `quality_rating` VARCHAR(10) DEFAULT NULL COMMENT '数据质量评级' AFTER `quality_score`;
-ALTER TABLE `metadata_column` ADD COLUMN IF NOT EXISTS `business_desc` VARCHAR(500) DEFAULT NULL COMMENT '业务描述' AFTER `business_name`;
-ALTER TABLE `metadata_column` ADD COLUMN IF NOT EXISTS `data_steward` VARCHAR(100) DEFAULT NULL COMMENT '数据管家' AFTER `business_desc`;

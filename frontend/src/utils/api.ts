@@ -1,7 +1,8 @@
 import axios from 'axios';
+import { getFullPath } from './basePath';
 
 const api = axios.create({
-  baseURL: '/api/v1',
+  baseURL: '/dataops_dms/api/v1',
   timeout: 30000,
   headers: { 'Content-Type': 'application/json' },
 });
@@ -22,7 +23,7 @@ api.interceptors.response.use(
     if (error.response?.status === 401) {
       localStorage.removeItem('token');
       localStorage.removeItem('user');
-      window.location.href = '/login';
+      window.location.href = getFullPath('/login');
     }
     return Promise.reject(error);
   }
@@ -56,23 +57,14 @@ export const instanceApi = {
   update: (id: string, data: any) => api.put(`/instances/${id}`, data),
   delete: (id: string) => api.delete(`/instances/${id}`),
   test: (id: string) => api.post(`/instances/${id}/test`),
-  // 获取实例下的所有Schema列表
   getSchemas: (id: string) => api.get(`/instances/${id}/schemas`),
-  // 获取实例下的所有Schema列表（不做权限过滤，用于权限申请页面）
   getSchemasAll: (id: string) => api.get(`/instances/${id}/schemas`, { params: { all: true } }),
-  // 获取实例列表（不做权限过滤，用于权限申请页面）
   listAll: () => api.get('/instances', { params: { all: true } }),
-  // 获取表列表
   getTableNames: (id: string, schemaName?: string) => api.get(`/instances/${id}/tables`, { params: { schemaName } }),
-  // 获取单张表的建表语句
   getCreateTableSql: (id: string, tableName: string, schemaName?: string) => api.get(`/instances/${id}/tables/${tableName}/create-sql`, { params: { schemaName } }),
-  // 批量获取多张表的建表语句
   batchGetCreateTableSql: (id: string, tableNames: string[], schemaName?: string) => api.post(`/instances/${id}/tables/batch-create-sql`, tableNames, { params: { schemaName } }),
-  // 获取Schema（表名+列名+类型），用于SQL智能补全
   getSchema: (id: string, schemaName?: string) => api.get(`/instances/${id}/schema`, { params: { schemaName } }),
-  // 获取浏览器综合Schema（含表、视图、存储过程、函数、触发器、事件）
   getBrowserSchema: (id: string, schemaName?: string) => api.get(`/instances/${id}/browser-schema`, { params: { schemaName } }),
-  // 获取单张表的详细信息（索引/外键/约束/触发器/DDL）
   getTableDetail: (id: string, tableName: string, schemaName?: string) => api.get(`/instances/${id}/tables/${tableName}/detail`, { params: { schemaName } }),
 };
 
@@ -89,7 +81,6 @@ export const ticketApi = {
   rollback: (id: string) => api.post(`/tickets/${id}/rollback`),
   execute: (id: string) => api.post(`/tickets/${id}/execute`),
   auditSql: (sql: string) => api.post('/tickets/audit-sql', { sql }),
-  // 无锁数据变更检测
   checkLockFreeDml: (instanceId: string, schemaName: string, sql: string) =>
     api.post('/tickets/check-lock-free-dml', { instanceId, schemaName, sql }),
   approvals: (id: string) => api.get(`/tickets/${id}/approvals`),
@@ -124,7 +115,6 @@ export const sensitiveApi = {
   markColumn: (data: any) => api.post('/sensitive/columns', data),
   batchMark: (data: any) => api.post('/sensitive/columns/batch', data),
   deleteColumn: (id: string) => api.delete(`/sensitive/columns/${id}`),
-  // 脱敏规则 CRUD
   listMaskRules: () => api.get('/sensitive/mask-rules'),
   getMaskRuleById: (id: string) => api.get(`/sensitive/mask-rules/${id}`),
   getMaskRuleByCode: (code: string) => api.get(`/sensitive/mask-rules/by-code/${code}`),
@@ -158,8 +148,6 @@ export const auditApi = {
   list: (params?: any) => api.get('/audit', { params }),
 };
 
-
-
 // ============ 脱敏 ============
 export const maskingApi = {
   listRules: (params?: any) => api.get('/masking/rules', { params }),
@@ -168,18 +156,6 @@ export const maskingApi = {
   updateRule: (id: string, data: any) => api.put(`/masking/rules/${id}`, data),
   deleteRule: (id: string) => api.delete(`/masking/rules/${id}`),
   toggleRule: (id: string, enabled: boolean) => api.post(`/masking/rules/${id}/toggle?enabled=${enabled}`),
-};
-
-// ============ 元数据 ============
-export const metadataApi = {
-  collect: (instanceId: string, schemaName?: string) => api.post(`/metadata/collect/${instanceId}`, { schemaName }),
-  listTables: (params?: any) => api.get('/metadata/tables', { params }),
-  getTable: (id: string) => api.get(`/metadata/tables/${id}`),
-  updateTable: (id: string, params: any) => api.put(`/metadata/tables/${id}`, null, { params }),
-  listColumns: (tableId: string) => api.get(`/metadata/tables/${tableId}/columns`),
-  updateColumn: (id: string, params: any) => api.put(`/metadata/columns/${id}`, null, { params }),
-  search: (params: any) => api.get('/metadata/search', { params }),
-  stats: (instanceId: string) => api.get(`/metadata/stats/${instanceId}`),
 };
 
 // ============ 数据质量 ============
@@ -260,23 +236,19 @@ export const ddlWorkbenchApi = {
     api.get('/ddl-workbench/table-indexes', { params: { instanceId, tableName, schemaName } }),
   previewRollback: (sql: string, tableName?: string) =>
     api.post('/ddl-workbench/preview-rollback', { sql, tableName }),
-  // 环境流转
   submitChangeTask: (data: any) => api.post('/ddl-workbench/change-tasks/submit', data),
   listChangeTasks: (environment: string, limit = 20) =>
     api.get('/ddl-workbench/change-tasks', { params: { environment, limit } }),
   executeChangeTask: (id: string) => api.post(`/ddl-workbench/change-tasks/${id}/execute`),
   skipChangeTask: (id: string) => api.post(`/ddl-workbench/change-tasks/${id}/skip`),
-  // 三阶段流水线新增
   rollbackToDev: (id: string) => api.post(`/ddl-workbench/change-tasks/${id}/rollback-to-dev`),
   getSourceTaskDetail: (id: string) => api.get(`/ddl-workbench/change-tasks/${id}/source-detail`),
-  // ========== 项目工单管理 ==========
   createProject: (data: any) => api.post('/ddl-workbench/projects', data),
   getProject: (id: string) => api.get(`/ddl-workbench/projects/${id}`),
   listProjects: (params?: any) => api.get('/ddl-workbench/projects', { params }),
   updateProject: (id: string, data: any) => api.put(`/ddl-workbench/projects/${id}`, data),
   closeProject: (id: string) => api.post(`/ddl-workbench/projects/${id}/close`),
   advanceStage: (id: string) => api.post(`/ddl-workbench/projects/${id}/advance-stage`),
-  // 项目表变更管理
   addProjectTable: (projectId: string, data: any) => api.post(`/ddl-workbench/projects/${projectId}/tables`, data),
   listProjectTables: (projectId: string) => api.get(`/ddl-workbench/projects/${projectId}/tables`),
   getProjectTable: (projectId: string, tableId: string) => api.get(`/ddl-workbench/projects/${projectId}/tables/${tableId}`),
@@ -317,7 +289,6 @@ export const importApi = {
 };
 
 // ============ 权限管理 ============
-// @deprecated 请使用 instanceApi 代替
 export const databaseApi = {
   list: instanceApi.list,
   get: instanceApi.get,
@@ -362,7 +333,7 @@ export const exportApi = {
 
 // ============ SQL保存查询/执行历史 ============
 export const savedQueryApi = {
-  list: () => Promise.resolve({ data: { data: [], success: true } }), // 前端本地存储
+  list: () => Promise.resolve({ data: { data: [], success: true } }),
 };
 
 // ============ DDL部署流水线 ============
@@ -371,15 +342,11 @@ export const pipelineApi = {
   get: (id: string) => api.get(`/pipelines/${id}`),
   create: (data: any) => api.post('/pipelines', data),
   delete: (id: string) => api.delete(`/pipelines/${id}`),
-  
-  // 执行记录
   startExecution: (data: any) => api.post('/pipelines/executions', data),
   listExecutions: (pipelineId?: string, page = 1, size = 10) => 
     api.get(`/pipelines/executions?pipelineId=${pipelineId || ''}&page=${page}&size=${size}`),
   getExecution: (id: string) => api.get(`/pipelines/executions/${id}`),
   cancelExecution: (id: string) => api.post(`/pipelines/executions/${id}/cancel`),
-  
-  // 阶段操作
   executeStage: (id: string) => api.post(`/pipelines/stage-executions/${id}/execute`),
   approveStage: (id: string, comment: string) => 
     api.post(`/pipelines/stage-executions/${id}/approve`, { comment }),

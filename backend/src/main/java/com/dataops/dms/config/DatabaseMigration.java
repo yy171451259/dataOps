@@ -229,9 +229,6 @@ public class DatabaseMigration implements CommandLineRunner {
                 }
             }
 
-            // ============ 元数据表字段统一: database_id → instance_id ============
-            migrateMetadataColumns(conn);
-
             // ============ V6: DDL项目工单表 ============
             createTableIfNotExists(conn, "ddl_project",
                 "CREATE TABLE ddl_project (" +
@@ -282,35 +279,6 @@ public class DatabaseMigration implements CommandLineRunner {
 
         } catch (Exception e) {
             log.warn("DatabaseMigration skipped (column may already exist or DB not ready): {}", e.getMessage());
-        }
-    }
-
-    /**
-     * 元数据表字段统一: database_id → instance_id，并补齐 schema_name
-     */
-    private void migrateMetadataColumns(Connection conn) {
-        try {
-            // metadata_table: 重命名 database_id → instance_id
-            if (columnExists(conn, "metadata_table", "database_id") && !columnExists(conn, "metadata_table", "instance_id")) {
-                try (Statement stmt = conn.createStatement()) {
-                    stmt.execute("ALTER TABLE `metadata_table` CHANGE COLUMN `database_id` `instance_id` VARCHAR(64) COMMENT '实例ID'");
-                    log.info("Migration: Renamed metadata_table.database_id -> instance_id");
-                }
-            }
-            // metadata_table: 添加 schema_name
-            addColumnIfNotExists(conn, "metadata_table", "schema_name", "VARCHAR(128) COMMENT 'Schema名' AFTER `instance_id`");
-
-            // metadata_column: 重命名 database_id → instance_id（如果有）
-            if (columnExists(conn, "metadata_column", "database_id") && !columnExists(conn, "metadata_column", "instance_id")) {
-                try (Statement stmt = conn.createStatement()) {
-                    stmt.execute("ALTER TABLE `metadata_column` CHANGE COLUMN `database_id` `instance_id` VARCHAR(64) COMMENT '实例ID'");
-                    log.info("Migration: Renamed metadata_column.database_id -> instance_id");
-                }
-            }
-            // metadata_column: 补充 instance_id（不存在且无法重命名时新增）
-            addColumnIfNotExists(conn, "metadata_column", "instance_id", "VARCHAR(64) COMMENT '实例ID' AFTER `table_id`");
-        } catch (Exception e) {
-            log.warn("Metadata column migration skipped: {}", e.getMessage());
         }
     }
 
@@ -437,8 +405,7 @@ public class DatabaseMigration implements CommandLineRunner {
                 {"perm_permission_manage","权限管理","permission:manage","/api/v1/permissions/**","write","资源权限管理"},
                 {"perm_masking_manage","脱敏管理","masking:manage","/api/v1/masking/**","write","脱敏规则管理"},
                 {"perm_quality_manage","质量管理","quality:manage","/api/v1/quality/**","write","质量规则管理"},
-                {"perm_metadata_manage","元数据管理","metadata:manage","/api/v1/metadata/**","write","元数据管理"},
-                {"perm_pipeline_manage","流水线管理","pipeline:manage","/api/v1/pipelines/**","write","DDL流水线"},
+                {"perm_owner_manage","资源Owner","owner:manage","/api/v1/owners/**","write","资源Owner管理"},
                 {"perm_monitor_view","监控查看","monitor:view","/api/v1/monitor/**","read","性能监控"},
                 {"perm_import_execute","数据导入","import:execute","/api/v1/import/**","write","数据导入"},
                 {"perm_ddl_workbench","DDL工作台","ddl:workbench","/api/v1/ddl-workbench/**","write","DDL工作台"},
@@ -470,14 +437,14 @@ public class DatabaseMigration implements CommandLineRunner {
             // admin gets all
             String[] allPerms = {"perm_sql_query","perm_sql_execute","perm_sql_audit","perm_db_view","perm_db_manage",
                 "perm_ticket_create","perm_ticket_approve","perm_ticket_rollback","perm_audit_view","perm_user_manage",
-                "perm_role_manage","perm_permission_manage","perm_masking_manage","perm_quality_manage","perm_metadata_manage",
+                "perm_role_manage","perm_permission_manage","perm_masking_manage","perm_quality_manage",
                 "perm_pipeline_manage","perm_monitor_view","perm_import_execute","perm_ddl_workbench","perm_export_data",
                 "perm_system_settings","perm_menu_manage","perm_sensitive_view","perm_sensitive_manage",
                 "perm_owner_manage","perm_access_manage"};
             String[] dbaPerms = {"perm_sql_query","perm_sql_execute","perm_sql_audit","perm_db_view","perm_db_manage",
                 "perm_ticket_create","perm_ticket_approve","perm_ticket_rollback","perm_audit_view","perm_masking_manage",
-                "perm_quality_manage","perm_metadata_manage","perm_pipeline_manage","perm_monitor_view","perm_ddl_workbench"};
-            String[] devPerms = {"perm_sql_query","perm_sql_audit","perm_db_view","perm_ticket_create","perm_metadata_manage",
+                "perm_quality_manage","perm_pipeline_manage","perm_monitor_view","perm_ddl_workbench"};
+            String[] devPerms = {"perm_sql_query","perm_sql_audit","perm_db_view","perm_ticket_create",
                 "perm_monitor_view","perm_ddl_workbench"};
             String[] viewerPerms = {"perm_sql_query","perm_db_view","perm_audit_view","perm_monitor_view"};
             String[] approverPerms = {"perm_sql_query","perm_db_view","perm_ticket_approve","perm_audit_view","perm_monitor_view"};
@@ -564,7 +531,6 @@ public class DatabaseMigration implements CommandLineRunner {
                 {"menu_schema", null, "结构设计", "menu", "/schema-designer", null, "BuildOutlined", null, "4", "1", "active"},
                 {"menu_import", null, "数据导入", "menu", "/import", null, "ImportOutlined", null, "5", "1", "active"},
                 {"menu_monitor", null, "性能监控", "menu", "/monitor", null, "LineChartOutlined", null, "6", "1", "active"},
-                {"menu_metadata", null, "元数据管理", "menu", "/metadata", null, "TableOutlined", null, "7", "1", "active"},
                 {"menu_tickets", null, "数据变更", "menu", "/tickets", null, "CheckSquareOutlined", null, "8", "1", "active"},
                 {"menu_perm_requests", null, "权限申请", "menu", "/permission-requests", null, "SendOutlined", null, "9", "1", "active"},
                 // 安全管理分组
@@ -605,20 +571,20 @@ public class DatabaseMigration implements CommandLineRunner {
             }
             // admin 拥有所有菜单
             String[] allMenuIds = {"menu_dashboard","menu_sql","menu_databases","menu_schema",
-                "menu_import","menu_monitor","menu_metadata","menu_tickets",
+                "menu_import","menu_monitor","menu_tickets",
                 "menu_perm_requests",
                 "menu_security_group","menu_resource_owners","menu_sensitive","menu_row_controls",
                 "menu_system_group","menu_users","menu_roles","menu_notifications","menu_settings","menu_menu_manage"};
             
             // dba 菜单（无用户管理/系统设置/菜单管理）
             String[] dbaMenuIds = {"menu_dashboard","menu_sql","menu_databases","menu_schema",
-                "menu_import","menu_monitor","menu_metadata","menu_tickets",
+                "menu_import","menu_monitor","menu_tickets",
                 "menu_perm_requests",
                 "menu_security_group","menu_resource_owners","menu_sensitive","menu_row_controls"};
             
             // developer 菜单
             String[] devMenuIds = {"menu_dashboard","menu_sql","menu_databases","menu_schema",
-                "menu_monitor","menu_metadata","menu_tickets",
+                "menu_monitor","menu_tickets",
                 "menu_perm_requests"};
             
             // viewer 菜单（只读）

@@ -66,14 +66,12 @@ logging:
     org.springframework.security: info
     org.flowable: info
 
-# Flowable工作流配置
-flowable:
+# Flowable工作流配�?flowable:
   # 首次启动使用 true 自动建表，建表成功后建议改为 false
   database-schema-update: true
   async-executor-activate: false
   history-level: full
-  # 指定数据库类型为mysql，避免自动检测失败
-  database-type: mysql
+  # 指定数据库类型为mysql，避免自动检测失�?  database-type: mysql
 
 # 权限申请配置
 permission:
@@ -85,7 +83,7 @@ dingtalk:
   app-key: ding4qjk3rhfugqtgghs
   app-secret: Gt6PE34v46_p2U0fUS7l1p7z3i6yK0hezYFXr9AVn_05sNxG4MyVJMdChtIVo4_W
   corp-id: dingb8846e900bf758c535c2f4657eb6378f  # 需要在企业信息页面获取
-  redirect-uri: http://wxdev.worldunion.com.cn/yangxy/login/dingtalk/callback  # 需要替换为你的公网域名
+  redirect-uri: https://wxdev.worldunion.com.cn/dataops_dms/login/dingtalk/callback  # 需要替换为你的公网域名
   auth-url: https://login.dingtalk.com/oauth2/auth
   token-url: https://api.dingtalk.com/v1.0/oauth2/userAccessToken
   user-info-url: https://api.dingtalk.com/v1.0/contact/users/me
