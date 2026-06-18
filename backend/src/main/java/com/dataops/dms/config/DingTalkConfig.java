@@ -33,6 +33,11 @@ public class DingTalkConfig {
     private String redirectUri;
 
     /**
+     * 后端公网地址（扫码登录用，需配置为前端可访问的后端地址）
+     */
+    private String backendBaseUrl;
+
+    /**
      * OAuth授权地址
      */
     private String authUrl = "https://login.dingtalk.com/oauth2/auth";

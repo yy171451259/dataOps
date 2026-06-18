@@ -5,6 +5,7 @@ import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.boot.autoconfigure.liquibase.LiquibaseAutoConfiguration;
 import org.springframework.scheduling.annotation.EnableAsync;
+import org.springframework.scheduling.annotation.EnableScheduling;
 
 /**
  * DataOps DMS 主应用类
@@ -29,6 +30,7 @@ import org.springframework.scheduling.annotation.EnableAsync;
     org.flowable.spring.boot.content.ContentEngineServicesAutoConfiguration.class
 })
 @EnableAsync
+@EnableScheduling
 @MapperScan("com.dataops.dms.mapper")
 public class DmsApplication {
 

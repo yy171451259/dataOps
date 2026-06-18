@@ -1,5 +1,7 @@
 package com.dataops.dms.service;
 
+import com.dataops.dms.service.impl.DingTalkQrSession;
+
 import java.util.Map;
 
 /**
@@ -39,4 +41,36 @@ public interface DingTalkOAuthService {
      * @return 用户信息
      */
     Map<String, Object> getUserInfo(String accessToken);
+
+    /**
+     * 创建扫码登录会话
+     *
+     * @return 会话ID
+     */
+    String createQrSession();
+
+    /**
+     * 获取扫码登录会话状态
+     *
+     * @param sessionId 会话ID
+     * @return 会话对象，可能为null（过期或不存在）
+     */
+    DingTalkQrSession getQrSession(String sessionId);
+
+    /**
+     * 更新会话状态
+     *
+     * @param sessionId 会话ID
+     * @param status 新状态
+     */
+    void updateQrSessionStatus(String sessionId, String status);
+
+    /**
+     * 完成会话登录
+     *
+     * @param sessionId 会话ID
+     * @param token JWT令牌
+     * @param loginResult 登录结果
+     */
+    void completeQrSession(String sessionId, String token, Map<String, Object> loginResult);
 }

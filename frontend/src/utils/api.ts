@@ -39,6 +39,9 @@ export const authApi = {
     api.post('/auth/change-password', { oldPassword, newPassword }),
   getDingTalkAuthUrl: (state?: string) => api.get('/auth/dingtalk/auth-url', { params: { state } }),
   dingTalkLogin: (authCode: string) => api.post('/auth/dingtalk/callback', { authCode }),
+  // 钉钉扫码登录 - PC轮询模式
+  getDingTalkQrCode: () => api.get('/auth/dingtalk/qr-code'),
+  getDingTalkQrStatus: (sid: string) => api.get('/auth/dingtalk/qr-status', { params: { sid } }),
 };
 
 // ============ SQL ============

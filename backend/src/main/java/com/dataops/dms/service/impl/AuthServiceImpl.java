@@ -9,6 +9,7 @@ import com.dataops.dms.mapper.RoleMapper;
 import com.dataops.dms.mapper.UserMapper;
 import com.dataops.dms.service.AuthService;
 import com.dataops.dms.util.JwtUtil;
+import liquibase.pro.packaged.S;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
@@ -168,12 +169,17 @@ public class AuthServiceImpl implements AuthService {
             // 1. 通过授权码获取钉钉用户信息
             Map<String, Object> dingTalkUser = dingTalkOAuthService.getUserInfoByAuthCode(authCode);
             String unionId = (String) dingTalkUser.get("unionId");
+            // 新版钉钉API v1.0 使用 openId，旧版使用 userId，兼容两种
+            String openId = (String) dingTalkUser.get("openId");
             String userId = (String) dingTalkUser.get("userId");
+            String dingtalkUid = (openId != null) ? openId : userId;
             String nickname = (String) dingTalkUser.get("nick");
             String avatar = (String) dingTalkUser.get("avatarUrl");
+            String email = (String) dingTalkUser.get("email");
+            String username = (String) dingTalkUser.get("mobile");
 
             if (unionId == null) {
-                return Result.error("获取钉钉用户信息失败");
+                return Result.error("获取钉钉用户信息失败：unionId为空");
             }
 
             // 2. 查找是否已存在该钉钉用户
@@ -184,26 +190,35 @@ public class AuthServiceImpl implements AuthService {
             // 3. 如果用户不存在，创建新用户
             if (user == null) {
                 user = new User();
-                user.setUsername("dt_" + userId); // 使用钉钉用户ID作为用户名
+                user.setUsername(username);
                 user.setNickname(nickname != null ? nickname : "钉钉用户");
                 user.setAvatar(avatar);
                 user.setDingtalkUnionId(unionId);
-                user.setDingtalkUserId(userId);
+                user.setDingtalkUserId(dingtalkUid);
+                user.setEmail(email);
                 user.setIsActive(true);
                 user.setIsAdmin(false);
+                // 钉钉用户无本地密码，设置空字符串占位（数据库列 NOT NULL）
+                user.setPasswordHash("");
                 userMapper.insert(user);
 
                 // 为新用户分配默认角色：开发人员（developer）
                 String roleRecordId = java.util.UUID.randomUUID().toString().replace("-", "");
                 roleMapper.insertUserRole(roleRecordId, user.getId(), "role_developer", "system");
             } else {
-                // 更新钉钉用户ID（可能变化）
-                user.setDingtalkUserId(userId);
+                // 更新钉钉用户ID和昵称头像（可能变化）
+                if (dingtalkUid != null) {
+                    user.setDingtalkUserId(dingtalkUid);
+                }
                 if (nickname != null) {
                     user.setNickname(nickname);
                 }
                 if (avatar != null) {
                     user.setAvatar(avatar);
+                }
+                // 如果该用户之前也没有密码（纯钉钉用户），确保 passwordHash 不为 null
+                if (user.getPasswordHash() == null) {
+                    user.setPasswordHash("");
                 }
                 userMapper.updateById(user);
             }

@@ -320,7 +320,7 @@ const App: React.FC = () => {
       },
     }}>
       <Routes>
-        <Route path="/login" element={isLoggedIn ? <Navigate to="/dashboard" replace /> : <LoginPage />} />
+        <Route path="/login/*" element={isLoggedIn ? <Navigate to="/dashboard" replace /> : <LoginPage />} />
         <Route path="/*" element={isLoggedIn ? <ProtectedLayout /> : <Navigate to="/login" replace />} />
       </Routes>
     </ConfigProvider>
