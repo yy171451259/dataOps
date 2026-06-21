@@ -90,6 +90,12 @@ function analyzeSqlContext(
     return { context: 'column', prefix, aliases };
   }
 
+  // 检查是否在比较运算符后面 → 应提示值/列/函数，而不提示 LIMIT 等关键词
+  const afterOperatorPattern = /\b(=|!=|<>|<=|>=|<|>|LIKE|IS|BETWEEN)\s+\w*$/i;
+  if (afterOperatorPattern.test(originalText)) {
+    return { context: 'column', prefix, aliases };
+  }
+
   return { context: 'keyword', prefix, aliases };
 }
 
