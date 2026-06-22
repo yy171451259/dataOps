@@ -43,6 +43,14 @@ public interface DingTalkOAuthService {
     Map<String, Object> getUserInfo(String accessToken);
 
     /**
+     * 通过 unionId 获取钉钉 userId（用于发送工作通知）
+     *
+     * @param unionId 钉钉 unionId
+     * @return 钉钉 userId，获取失败返回 null
+     */
+    String getUserIdByUnionId(String unionId);
+
+    /**
      * 创建扫码登录会话
      *
      * @return 会话ID

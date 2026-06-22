@@ -83,9 +83,11 @@ dingtalk:
   app-key: dingfxknsa4tpltvzcki
   app-secret: uxuHczDPl5uotRiGxcJlbnxWfKgfrfW3a1x59LHsGKagu3gGjUxbi5epzze-b8-m
   corp-id: dingb8846e900bf758c535c2f4657eb6378f  # 需要在企业信息页面获取
+  agent-id: 4689657161                                        # 需要在钉钉开放平台查看应用的AgentId
   redirect-uri: https://wxdev.worldunion.com.cn/dataops_dms/login/dingtalk/callback  # 需要替换为你的公网域名
   backend-base-url: https://wxdev.worldunion.com.cn/dataops_dms  # 扫码登录用，后端公网地址
   auth-url: https://login.dingtalk.com/oauth2/auth
   token-url: https://api.dingtalk.com/v1.0/oauth2/userAccessToken
   user-info-url: https://api.dingtalk.com/v1.0/contact/users/me
-  send-message-url: https://api.dingtalk.com/v1.0/im/messages/conversations/send
+  oapi-token-url: https://oapi.dingtalk.com/gettoken
+  send-message-url: https://oapi.dingtalk.com/topapi/message/corpconversation/asyncsend_v2

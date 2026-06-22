@@ -53,7 +53,12 @@ public class User extends BaseEntity {
     private String dingtalkUnionId;
 
     /**
-     * 钉钉用户ID
+     * 钉钉用户ID（内部userId，用于发送工作通知）
      */
     private String dingtalkUserId;
+
+    /**
+     * 钉钉开放ID（openId，新版API使用）
+     */
+    private String dingtalkOpenId;
 }

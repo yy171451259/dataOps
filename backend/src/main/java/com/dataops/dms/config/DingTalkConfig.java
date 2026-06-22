@@ -53,7 +53,27 @@ public class DingTalkConfig {
     private String userInfoUrl = "https://api.dingtalk.com/v1.0/contact/users/me";
 
     /**
-     * 发送消息地址
+     * 钉钉应用的AgentId（发送工作通知时必需）
      */
-    private String sendMessageUrl = "https://api.dingtalk.com/v1.0/im/messages/conversations/send";
+    private Long agentId;
+
+    /**
+     * 旧版oapi获取token地址（发送工作通知用）
+     */
+    private String oapiTokenUrl = "https://oapi.dingtalk.com/gettoken";
+
+    /**
+     * 发送工作通知消息地址（旧版oapi）
+     */
+        private String sendMessageUrl = "https://oapi.dingtalk.com/topapi/message/corpconversation/asyncsend_v2";
+
+    /**
+     * 获取企业内部应用AccessToken地址（新版api）
+     */
+    private String getAccessTokenUrl = "https://api.dingtalk.com/v1.0/oauth2/accessToken";
+
+    /**
+     * 通过openId获取userId地址（新版api，用于消息发送时转换）
+     */
+    private String getUserIdByOpenIdUrl = "https://api.dingtalk.com/v1.0/contact/users/getUserIdByOpenId";
 }

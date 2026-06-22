@@ -6,11 +6,15 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.dataops.dms.common.result.PageResult;
 import com.dataops.dms.entity.PermissionRequest;
+import com.dataops.dms.entity.User;
 import com.dataops.dms.entity.UserPermission;
 import com.dataops.dms.mapper.PermissionRequestMapper;
+import com.dataops.dms.mapper.UserMapper;
 import com.dataops.dms.mapper.UserPermissionMapper;
+import com.dataops.dms.service.DingTalkMessageService;
 import com.dataops.dms.service.PermissionRequestService;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -27,6 +31,15 @@ public class PermissionRequestServiceImpl extends ServiceImpl<PermissionRequestM
     @javax.annotation.Resource
     private com.dataops.dms.service.ResourceOwnerService resourceOwnerService;
 
+    @javax.annotation.Resource
+    private DingTalkMessageService dingTalkMessageService;
+
+    @javax.annotation.Resource
+    private UserMapper userMapper;
+
+    @Value("${dingtalk.backend-base-url:}")
+    private String backendBaseUrl;
+
     @Override
     @Transactional
     public PermissionRequest submitRequest(PermissionRequest request) {
@@ -34,6 +47,14 @@ public class PermissionRequestServiceImpl extends ServiceImpl<PermissionRequestM
         request.setCreatedAt(LocalDateTime.now());
         this.save(request);
         log.info("权限工单提交: {}, 标题: {}, 申请人: {}", request.getId(), request.getResourceName(), request.getApplicantName());
+
+        // 发送钉钉通知给审批人（异步执行，不阻塞主流程）
+        try {
+            notifyApprovers(request);
+        } catch (Exception e) {
+            log.warn("通知审批人失败（不影响工单提交）: {}", e.getMessage());
+        }
+
         return request;
     }
 
@@ -59,7 +80,16 @@ public class PermissionRequestServiceImpl extends ServiceImpl<PermissionRequestM
             request.setStatus("rejected");
             log.info("权限工单被拒绝: {}, 审批人: {}", requestId, approverName);
         }
-        return this.updateById(request);
+        boolean result = this.updateById(request);
+
+        // 发送钉钉通知给申请人（异步执行，不阻塞主流程）
+        try {
+            notifyApplicant(request, approved, comment);
+        } catch (Exception e) {
+            log.warn("通知申请人失败（不影响审批结果）: {}", e.getMessage());
+        }
+
+        return result;
     }
 
     /**
@@ -265,5 +295,139 @@ public class PermissionRequestServiceImpl extends ServiceImpl<PermissionRequestM
         request.setStatus("cancelled");
         request.setApprovedAt(LocalDateTime.now());
         return this.updateById(request);
+    }
+
+    // ==================== 钉钉通知 ====================
+
+    /**
+     * 工单提交后，通知所有审批人
+     */
+    private void notifyApprovers(PermissionRequest request) {
+        // 从 approverIds 字段获取所有审批人 ID（逗号分隔）
+        String approverIds = request.getApproverIds();
+        if (approverIds == null || approverIds.isEmpty()) {
+            // 如果 multi-approver 为空，退而使用 approverId
+            if (request.getApproverId() != null && !request.getApproverId().isEmpty()) {
+                approverIds = request.getApproverId();
+            } else {
+                log.info("工单 {} 没有指定审批人，跳过通知", request.getId());
+                return;
+            }
+        }
+
+        String[] ids = approverIds.split(",");
+        for (String aid : ids) {
+            if (aid == null || aid.trim().isEmpty()) continue;
+            try {
+                User approver = userMapper.selectById(aid.trim());
+                if (approver == null || approver.getDingtalkUserId() == null || approver.getDingtalkUserId().isEmpty()) {
+                    log.info("审批人 {} 未绑定钉钉，跳过通知", aid.trim());
+                    continue;
+                }
+
+                String title = "🔔 新的权限申请待审批";
+                String content = String.format(
+                    "### 🔔 新的权限申请待审批\n\n" +
+                    "---\n\n" +
+                    "- **申请人**：%s\n" +
+                    "- **申请资源**：%s\n" +
+                    "- **申请权限**：%s\n" +
+                    "- **申请原因**：%s\n" +
+                    "- **申请时间**：%s\n\n" +
+                    "---\n\n" +
+                    "> 请登录系统处理，点击下方链接查看详情。\n\n" +
+                    "[🔗 查看工单详情](%s/#/permission-requests/%s)",
+                    request.getApplicantName(),
+                    request.getResourceName() != null ? request.getResourceName() : request.getResourceId(),
+                    formatPermsForDisplay(request.getRequestedPermissions()),
+                    request.getReason() != null ? request.getReason() : "无",
+                    request.getCreatedAt() != null ? request.getCreatedAt().toString().replace("T", " ") : "",
+                    backendBaseUrl != null ? backendBaseUrl : "",
+                    request.getId()
+                );
+
+                boolean sent = dingTalkMessageService.sendMarkdownMessage(approver.getDingtalkUserId(), title, content);
+                if (sent) {
+                    log.info("已发送钉钉通知给审批人: {} (dingtalkUserId={})", approver.getNickname(), approver.getDingtalkUserId());
+                } else {
+                    log.warn("钉钉通知发送失败: 审批人 {} (dingtalkUserId={})", approver.getNickname(), approver.getDingtalkUserId());
+                }
+            } catch (Exception e) {
+                log.warn("通知审批人 {} 失败: {}", aid.trim(), e.getMessage());
+            }
+        }
+    }
+
+    /**
+     * 审批完成后，通知申请人
+     */
+    private void notifyApplicant(PermissionRequest request, boolean approved, String comment) {
+        String applicantId = request.getApplicantId();
+        if (applicantId == null || applicantId.isEmpty()) return;
+
+        try {
+            User applicant = userMapper.selectById(applicantId);
+            if (applicant == null || applicant.getDingtalkUserId() == null || applicant.getDingtalkUserId().isEmpty()) {
+                log.info("申请人 {} 未绑定钉钉，跳过通知", applicantId);
+                return;
+            }
+
+            String statusEmoji = approved ? "✅" : "❌";
+            String statusText = approved ? "已通过" : "已拒绝";
+            String title = String.format("%s 权限申请审批结果", statusEmoji);
+            String content = String.format(
+                "### %s 权限申请审批结果\n\n" +
+                "---\n\n" +
+                "- **申请资源**：%s\n" +
+                "- **申请权限**：%s\n" +
+                "- **审批结果**：%s **%s**\n" +
+                "- **审批意见**：%s\n" +
+                "- **审批时间**：%s\n\n" +
+                "---\n\n" +
+                "> 如有疑问，请联系管理员。\n\n" +
+                "[🔗 查看工单详情](%s/#/permission-requests/%s)",
+                statusEmoji,
+                request.getResourceName() != null ? request.getResourceName() : request.getResourceId(),
+                formatPermsForDisplay(request.getRequestedPermissions()),
+                statusEmoji, statusText,
+                comment != null && !comment.isEmpty() ? comment : "无",
+                request.getApprovedAt() != null ? request.getApprovedAt().toString().replace("T", " ") : "",
+                backendBaseUrl != null ? backendBaseUrl : "",
+                request.getId()
+            );
+
+            boolean sent = dingTalkMessageService.sendMarkdownMessage(applicant.getDingtalkUserId(), title, content);
+            if (sent) {
+                log.info("已发送钉钉通知给申请人: {} (dingtalkUserId={})", applicant.getNickname(), applicant.getDingtalkUserId());
+            } else {
+                log.warn("钉钉通知发送失败: 申请人 {} (dingtalkUserId={})", applicant.getNickname(), applicant.getDingtalkUserId());
+            }
+        } catch (Exception e) {
+            log.warn("通知申请人 {} 失败: {}", applicantId, e.getMessage());
+        }
+    }
+
+    /**
+     * 格式化权限字符串用于展示
+     * 例: "query,export,ddl" -> "查询 / 导出 / DDL"
+     */
+    private String formatPermsForDisplay(String perms) {
+        if (perms == null || perms.isEmpty()) return "无";
+        String[] parts = perms.replace("[", "").replace("]", "").replace("\"", "").split(",");
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < parts.length; i++) {
+            if (i > 0) sb.append(" / ");
+            String p = parts[i].trim();
+            switch (p.toLowerCase()) {
+                case "query": sb.append("查询"); break;
+                case "export": sb.append("导出"); break;
+                case "update": sb.append("变更"); break;
+                case "ddl": sb.append("结构变更"); break;
+                case "select": sb.append("查询(SELECT)"); break;
+                case "insert": sb.append("写入(INSERT)"); break;
+                default: sb.append(p); break;
+            }
+        }
+        return sb.toString();
     }
 }

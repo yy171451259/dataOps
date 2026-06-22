@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Form, Input, Button, Spin, message, Typography } from 'antd';
 import { UserOutlined, LockOutlined, DatabaseOutlined, ReloadOutlined } from '@ant-design/icons';
 import { useNavigate, useSearchParams } from 'react-router-dom';
+import QRCode from 'qrcode';
 import { authApi } from '../utils/api';
 import { useAuthStore } from '../store/useAuthStore';
 
@@ -52,8 +53,8 @@ const LoginPage: React.FC = () => {
       const sid: string = data.sessionId;
 
       sessionIdRef.current = sid;
-      const qrApiUrl = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(scanUrl)}`;
-      setQrCodeUrl(qrApiUrl);
+      const qrDataUrl = await QRCode.toDataURL(scanUrl, { width: 200, margin: 1 });
+      setQrCodeUrl(qrDataUrl);
       setQrErrorMsg('');
       setQrStatus('pending');
 
