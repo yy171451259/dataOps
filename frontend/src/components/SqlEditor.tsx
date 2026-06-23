@@ -48,6 +48,12 @@ import ObjectBrowser from './ObjectBrowser';
 
 
 
+
+
+
+
+
+
 const { TextArea } = Input;
 
 
@@ -409,7 +415,7 @@ const SqlEditor: React.FC<SqlEditorProps> = () => {
 
   const navigate = useNavigate();
 
-  const { sqlTabs, activeTab, setActiveTab, addTab, removeTab, updateTab, savedQueries } = useAppStore();
+  const { sqlTabs, activeTab, setActiveTab, addTab, removeTab, updateTab, savedQueries, sidebarCollapsed, toggleSidebar } = useAppStore();
 
   const activeTabData = sqlTabs.find(t => t.key === activeTab) || sqlTabs[0] || null;
 
@@ -806,6 +812,28 @@ const SqlEditor: React.FC<SqlEditorProps> = () => {
   const [activeResultIdx, setActiveResultIdx] = useState<number>(0);
 
   const [resultViewMode, setResultViewMode] = useState<'grid' | 'text' | 'record'>('grid');
+  const [columnWidths, setColumnWidths] = useState<Record<string, number>>({});
+  const resizeRef = useRef<{ col: string; startX: number; startWidth: number } | null>(null);
+  const [selectedRowKey, setSelectedRowKey] = useState<number | null>(null);
+
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!resizeRef.current) return;
+      const { col, startX, startWidth } = resizeRef.current;
+      setColumnWidths(prev => ({ ...prev, [col]: Math.max(60, startWidth + (e.clientX - startX)) }));
+    };
+    const handleMouseUp = () => {
+      resizeRef.current = null;
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    };
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
+    return () => {
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, []);
 
   const [textViewRow, setTextViewRow] = useState(0);
 
@@ -1165,34 +1193,35 @@ const SqlEditor: React.FC<SqlEditorProps> = () => {
 
       <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
         {/* 对象浏览器侧边栏 - DBeaver 风格 Database Navigator */}
-        <div style={{ width: 260, borderRight: '1px solid #d5d5d5', display: 'flex', flexDirection: 'column', background: '#fff', overflow: 'hidden' }}>
-          <div style={{ flex: 1, overflow: 'auto' }}>
-            <ObjectBrowser
-              databaseId={activeTabData?.databaseId}
-              databaseName={activeTabData?.databaseName}
-              schemas={schemaNames}
-              loadingSchemas={loadingSchemaNames}
-              onNewTab={(databaseId, databaseName, tableName) => {
-                // 同名编辑器存在则复用，追加SQL
-                const existing = sqlTabs.find(t => t.databaseName === databaseName);
-                if (existing) {
-                  const appendSql = tableName ? `\nSELECT * FROM \`${tableName}\` LIMIT 100;` : '';
-                  updateTab(existing.key, { sql: (existing.sql || '') + appendSql });
-                  setActiveTab(existing.key);
-                  return;
-                }
-                const newKey = `tab-${Date.now()}`;
-                const title = tableName || databaseName || 'Query';
-                addTab({ key: newKey, title, sql: tableName ? `SELECT * FROM \`${tableName}\` LIMIT 100;` : '', databaseId, databaseName });
-              }}
-              onViewTableStructure={(databaseId, databaseName, tableName) => {
-                openTableStructure(databaseId, databaseName, tableName);
-              }}
-              onInsertToEditor={(text) => {
-                updateTab(activeTab, { ...activeTabData, sql: (activeTabData?.sql || '') + text });
-              }}
-            />
-          </div>
+        <div style={{ width: sidebarCollapsed ? 0 : 260, borderRight: sidebarCollapsed ? 'none' : '1px solid #d5d5d5', display: 'flex', flexDirection: 'column', background: '#fff', overflow: 'hidden', transition: 'width 0.2s', flexShrink: 0 }}>
+          {!sidebarCollapsed && (
+            <div style={{ flex: 1, overflow: 'auto' }}>
+              <ObjectBrowser
+                databaseId={activeTabData?.databaseId}
+                databaseName={activeTabData?.databaseName}
+                schemas={schemaNames}
+                loadingSchemas={loadingSchemaNames}
+                onNewTab={(databaseId, databaseName, tableName) => {
+                  const existing = sqlTabs.find(t => t.databaseName === databaseName);
+                  if (existing) {
+                    const appendSql = tableName ? `\nSELECT * FROM \`${tableName}\` LIMIT 100;` : '';
+                    updateTab(existing.key, { sql: (existing.sql || '') + appendSql });
+                    setActiveTab(existing.key);
+                    return;
+                  }
+                  const newKey = `tab-${Date.now()}`;
+                  const title = tableName || databaseName || 'Query';
+                  addTab({ key: newKey, title, sql: tableName ? `SELECT * FROM \`${tableName}\` LIMIT 100;` : '', databaseId, databaseName });
+                }}
+                onViewTableStructure={(databaseId, databaseName, tableName) => {
+                  openTableStructure(databaseId, databaseName, tableName);
+                }}
+                onInsertToEditor={(text) => {
+                  updateTab(activeTab, { ...activeTabData, sql: (activeTabData?.sql || '') + text });
+                }}
+              />
+            </div>
+          )}
         </div>
 
         {/* 编辑器工具栏 - DBeaver 风格，编辑器左侧竖排 */}
@@ -1235,6 +1264,16 @@ const SqlEditor: React.FC<SqlEditorProps> = () => {
                 navigator.clipboard.writeText(activeTabData?.sql || '');
                 message.success('OK');
               }} style={{ padding: '4px 8px' }} />
+          </Tooltip>
+          <Divider style={{ margin: '4px 0', width: 20, minWidth: 20 }} />
+          <Tooltip title={sidebarCollapsed ? '展开数据库导航' : '收起数据库导航'} placement="right">
+            <Button type="text" size="small"
+              icon={sidebarCollapsed
+                ? <span style={{ fontSize: 12, lineHeight: 1 }}>◀</span>
+                : <span style={{ fontSize: 12, lineHeight: 1 }}>▶</span>
+              }
+              onClick={toggleSidebar}
+              style={{ padding: '4px 8px', color: '#666' }} />
           </Tooltip>
         </div>
 
@@ -1520,14 +1559,46 @@ const SqlEditor: React.FC<SqlEditorProps> = () => {
 
                     {resultViewMode === 'grid' ? (
 
-                      <div style={{ flex: 1, overflow: 'auto' }}>
+                      <div className="result-table-wrapper" style={{ flex: 1, overflow: 'auto' }}>
+                        <style>{`
+                          .result-table-wrapper::-webkit-scrollbar { height: 10px; width: 10px; }
+                          .result-table-wrapper::-webkit-scrollbar-track { background: #f0f0f0; border-radius: 4px; }
+                          .result-table-wrapper::-webkit-scrollbar-thumb { background: #bfbfbf; border-radius: 4px; }
+                          .result-table-wrapper::-webkit-scrollbar-thumb:hover { background: #8c8c8c; }
+                        `}</style>
 
                         <Table
 
-                          columns={cols.map((col: string) => ({ title: col, dataIndex: col, key: col, ellipsis: true, width: Math.max(120, col.length * 12) }))}
-
+                          columns={cols.map((col: string) => ({
+                            title: (
+                              <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+                                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{col}</span>
+                                <div
+                                  style={{ position: 'absolute', right: -8, top: -8, bottom: -8, width: 16, cursor: 'col-resize', zIndex: 1 }}
+                                  onMouseDown={(e: React.MouseEvent) => {
+                                    e.stopPropagation();
+                                    e.preventDefault();
+                                    resizeRef.current = {
+                                      col,
+                                      startX: e.clientX,
+                                      startWidth: columnWidths[col] || Math.max(120, col.length * 12),
+                                    };
+                                    document.body.style.cursor = 'col-resize';
+                                    document.body.style.userSelect = 'none';
+                                  }}
+                                />
+                              </div>
+                            ),
+                            dataIndex: col,
+                            key: col,
+                            ellipsis: true,
+                            width: columnWidths[col] || Math.max(120, col.length * 12),
+                          }))}
                           dataSource={rows.map((row: any, idx: number) => ({ ...row, _key: idx }))}
-
+                          onRow={(record: any) => ({
+                            onClick: () => setSelectedRowKey(record._key === selectedRowKey ? null : record._key),
+                            style: record._key === selectedRowKey ? { backgroundColor: '#b7d6f5' } : {},
+                          })}
                           rowKey="_key"
 
                           size="small"

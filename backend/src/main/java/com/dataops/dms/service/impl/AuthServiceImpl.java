@@ -8,6 +8,8 @@ import com.dataops.dms.mapper.RoleMapper;
 import com.dataops.dms.mapper.UserMapper;
 import com.dataops.dms.service.AuthService;
 import com.dataops.dms.util.JwtUtil;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
@@ -19,6 +21,8 @@ import java.util.Map;
 
 @Service
 public class AuthServiceImpl implements AuthService {
+
+    private static final Logger log = LoggerFactory.getLogger(AuthServiceImpl.class);
 
     @Resource
     private UserMapper userMapper;
@@ -151,6 +155,9 @@ public class AuthServiceImpl implements AuthService {
     @Resource
     private com.dataops.dms.service.DingTalkOAuthService dingTalkOAuthService;
 
+    @Resource
+    private PermissionRequestServiceImpl permissionRequestService;
+
     @Override
     public String getDingTalkAuthUrl(String state) {
         return dingTalkOAuthService.getAuthUrl(state);
@@ -247,6 +254,50 @@ public class AuthServiceImpl implements AuthService {
         } catch (Exception e) {
             e.printStackTrace();
             return Result.error("钉钉登录失败：" + e.getMessage());
+        }
+    }
+
+    @Override
+    public Result<Map<String, Object>> microAppLogin(String token) {
+        try {
+            // 1. 验证 Token
+            User user = permissionRequestService.validateMicroAppToken(token);
+            if (user == null) {
+                return Result.error("免登链接已失效，请重新登录");
+            }
+
+            // 2. 检查用户是否被禁用
+            if (user.getIsActive() != null && !user.getIsActive()) {
+                return Result.error("账户已被禁用");
+            }
+
+            // 3. 生成 JWT
+            String jwt = jwtUtil.generateToken(user.getId(), user.getUsername());
+
+            // 4. 加载权限码
+            List<String> permissionCodes = permissionMapper.findPermissionCodesByUserId(user.getId());
+
+            // 5. 构建返回结果
+            Map<String, Object> result = new HashMap<>();
+            result.put("token", jwt);
+            result.put("userId", user.getId());
+            result.put("username", user.getUsername());
+            result.put("nickname", user.getNickname());
+            result.put("isAdmin", user.getIsAdmin());
+            result.put("permissions", permissionCodes);
+
+            // 6. 加载菜单树
+            try {
+                com.dataops.dms.common.result.Result<List<Map<String, Object>>> menuResult = sysMenuService.getUserMenuTree(user.getId());
+                result.put("menus", menuResult.getData());
+            } catch (Exception e) {
+                result.put("menus", new ArrayList<>());
+            }
+
+            return Result.success("免登成功", result);
+        } catch (Exception e) {
+            log.error("微应用免登异常", e);
+            return Result.error("免登失败：" + e.getMessage());
         }
     }
 

@@ -55,4 +55,9 @@ public interface AuthService {
      * 钉钉登录
      */
     Result<Map<String, Object>> dingTalkLogin(String authCode);
+
+    /**
+     * 微应用免登（使用一次性 Token）
+     */
+    Result<Map<String, Object>> microAppLogin(String token);
 }

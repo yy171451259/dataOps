@@ -15,11 +15,15 @@ import com.dataops.dms.service.DingTalkMessageService;
 import com.dataops.dms.service.PermissionRequestService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Instant;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 
 @Slf4j
 @Service
@@ -39,6 +43,70 @@ public class PermissionRequestServiceImpl extends ServiceImpl<PermissionRequestM
 
     @Value("${dingtalk.backend-base-url:}")
     private String backendBaseUrl;
+
+    // ========== 微应用免登 Token 管理 ==========
+
+    /** Token TTL：24 小时 */
+    private static final long TOKEN_TTL_SECONDS = 86400;
+
+    /** Token 缓存：token -> MicroAppToken */
+    private final ConcurrentHashMap<String, MicroAppToken> microAppTokens = new ConcurrentHashMap<>();
+
+    /**
+     * 微应用免登 Token
+     */
+    private static class MicroAppToken {
+        final String token;
+        final String userId;
+        final String dingtalkUserId;
+        final long createdAt; // epoch millis
+        volatile boolean used;
+
+        MicroAppToken(String token, String userId, String dingtalkUserId) {
+            this.token = token;
+            this.userId = userId;
+            this.dingtalkUserId = dingtalkUserId;
+            this.createdAt = Instant.now().toEpochMilli();
+            this.used = false;
+        }
+
+        boolean isExpired() {
+            return Instant.now().toEpochMilli() - createdAt > TOKEN_TTL_SECONDS * 1000L;
+        }
+    }
+
+    /**
+     * 验证微应用免登 Token
+     * @return 绑定到的 User，若无效返回 null
+     */
+    public User validateMicroAppToken(String token) {
+        if (token == null || token.isEmpty()) return null;
+        MicroAppToken mt = microAppTokens.get(token);
+        if (mt == null) {
+            log.warn("微应用 Token 不存在: {}", token);
+            return null;
+        }
+        if (mt.isExpired()) {
+            microAppTokens.remove(token);
+            log.warn("微应用 Token 已过期: {}", token);
+            return null;
+        }
+        if (mt.used) {
+            log.warn("微应用 Token 已被使用: {}", token);
+            return null;
+        }
+        mt.used = true;
+        microAppTokens.remove(token);
+        return userMapper.selectById(mt.userId);
+    }
+
+    /**
+     * 定时清理过期 Token（每 5 分钟）
+     */
+    @Scheduled(fixedDelay = 300000)
+    public void cleanExpiredTokens() {
+        microAppTokens.entrySet().removeIf(entry -> entry.getValue().isExpired());
+    }
 
     @Override
     @Transactional
@@ -335,18 +403,27 @@ public class PermissionRequestServiceImpl extends ServiceImpl<PermissionRequestM
                     "- **申请原因**：%s\n" +
                     "- **申请时间**：%s\n\n" +
                     "---\n\n" +
-                    "> 请登录系统处理，点击下方链接查看详情。\n\n" +
-                    "[🔗 查看工单详情](%s/#/permission-requests/%s)",
+                    "> 点击下方按钮查看详情并处理。",
                     request.getApplicantName(),
                     request.getResourceName() != null ? request.getResourceName() : request.getResourceId(),
                     formatPermsForDisplay(request.getRequestedPermissions()),
                     request.getReason() != null ? request.getReason() : "无",
-                    request.getCreatedAt() != null ? request.getCreatedAt().toString().replace("T", " ") : "",
-                    backendBaseUrl != null ? backendBaseUrl : "",
-                    request.getId()
+                    request.getCreatedAt() != null ? request.getCreatedAt().toString().replace("T", " ") : ""
                 );
 
-                boolean sent = dingTalkMessageService.sendMarkdownMessage(approver.getDingtalkUserId(), title, content);
+                // 生成一次性免登 Token
+                String token = UUID.randomUUID().toString().replace("-", "");
+                microAppTokens.put(token, new MicroAppToken(token, approver.getId(), approver.getDingtalkUserId()));
+                log.info("生成微应用免登 Token: {} -> 审批人 {}, dingtalkUserId={}",
+                    token.substring(0, 8) + "***", approver.getId(), approver.getDingtalkUserId());
+
+                // ActionCard URL：使用 token 免登，钉钉不会追加 ?code=xxx
+                String actionUrl = (backendBaseUrl != null ? backendBaseUrl : "")
+                    + "/login?token=" + token + "&redirect=%2Fdashboard";
+
+                boolean sent = dingTalkMessageService.sendActionCardMessage(
+                    approver.getDingtalkUserId(), title, content,
+                    "查看详情", actionUrl);
                 if (sent) {
                     log.info("已发送钉钉通知给审批人: {} (dingtalkUserId={})", approver.getNickname(), approver.getDingtalkUserId());
                 } else {

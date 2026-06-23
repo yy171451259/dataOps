@@ -42,6 +42,8 @@ export const authApi = {
   // 钉钉扫码登录 - PC轮询模式
   getDingTalkQrCode: () => api.get('/auth/dingtalk/qr-code'),
   getDingTalkQrStatus: (sid: string) => api.get('/auth/dingtalk/qr-status', { params: { sid } }),
+  // 微应用免登（使用一次性 Token）
+  microAppLogin: (token: string) => api.post('/auth/dingtalk/microapp-login', { token }),
 };
 
 // ============ SQL ============

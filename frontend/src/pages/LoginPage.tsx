@@ -20,11 +20,14 @@ const LoginPage: React.FC = () => {
   const [searchParams] = useSearchParams();
   const setAuth = useAuthStore((s) => s.setAuth);
 
-  // 处理钉钉OAuth回调（兼容旧的redirect登录方式）
+  // 处理钉钉OAuth回调 / 微应用免登Token
   useEffect(() => {
     const authCode = searchParams.get('authCode') || searchParams.get('code');
+    const token = searchParams.get('token');
     if (authCode) {
       handleDingTalkCallback(authCode);
+    } else if (token) {
+      handleMicroAppLogin(token);
     }
   }, [searchParams]);
 
@@ -152,9 +155,37 @@ const LoginPage: React.FC = () => {
         data.menus || []
       );
       message.success('钉钉登录成功');
-      navigate('/sql');
+      // 支持 redirect 参数：钉钉通知免登后跳转到指定页面
+      const redirect = searchParams.get('redirect') || '/sql';
+      navigate(redirect, { replace: true });
     } catch (err: any) {
       message.error(err.response?.data?.message || '钉钉登录失败');
+    } finally {
+      setDingTalkLoading(false);
+    }
+  };
+
+  const handleMicroAppLogin = async (token: string) => {
+    setDingTalkLoading(true);
+    try {
+      const res = await authApi.microAppLogin(token);
+      const data = res.data.data;
+      setAuth(
+        data.token,
+        {
+          userId: data.userId,
+          username: data.username,
+          nickname: data.nickname,
+          isAdmin: data.isAdmin,
+        },
+        data.permissions || [],
+        data.menus || []
+      );
+      message.success('免登成功');
+      const redirect = searchParams.get('redirect') || '/sql';
+      navigate(redirect, { replace: true });
+    } catch (err: any) {
+      message.error(err.response?.data?.message || '免登已失效，请手动登录');
     } finally {
       setDingTalkLoading(false);
     }

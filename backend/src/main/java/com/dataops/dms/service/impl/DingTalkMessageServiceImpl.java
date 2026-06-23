@@ -69,6 +69,21 @@ public class DingTalkMessageServiceImpl implements DingTalkMessageService {
         return sendMessage(userId, message);
     }
 
+    @Override
+    public boolean sendActionCardMessage(String userId, String title, String markdown, String singleTitle, String singleUrl) {
+        Map<String, Object> message = new HashMap<>();
+        message.put("msgtype", "action_card");
+
+        Map<String, Object> actionCard = new HashMap<>();
+        actionCard.put("title", title);
+        actionCard.put("markdown", markdown);
+        actionCard.put("single_title", singleTitle);
+        actionCard.put("single_url", singleUrl);
+        message.put("action_card", actionCard);
+
+        return sendMessage(userId, message);
+    }
+
     /**
      * 发送消息（使用旧版 oapi.dingtalk.com 工作通知 API）
      */

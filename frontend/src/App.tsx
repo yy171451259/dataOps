@@ -95,6 +95,19 @@ const ProtectedLayout: React.FC = () => {
   ]);
   const [activeTabKey, setActiveTabKey] = useState('/dashboard');
 
+  // 监听 URL 路径变化，同步打开/激活对应的标签页
+  useEffect(() => {
+    const path = location.pathname;
+    if (!pageComponents[path]) return;
+
+    setTabs(prevTabs => {
+      const exists = prevTabs.find(t => t.key === path);
+      if (exists) return prevTabs;
+      return [...prevTabs, { key: path, label: pageLabels[path] || path, path }];
+    });
+    setActiveTabKey(path);
+  }, [location.pathname]);
+
   useEffect(() => {
     const fetchPendingCount = async () => {
       try {

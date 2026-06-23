@@ -103,6 +103,13 @@ public class AuthController {
         return authService.dingTalkLogin(authCode);
     }
 
+    @PostMapping("/dingtalk/microapp-login")
+    @Operation(summary = "微应用免登")
+    public Result<Map<String, Object>> microAppLogin(@RequestBody Map<String, String> params) {
+        String token = params.get("token");
+        return authService.microAppLogin(token);
+    }
+
     // ========== 钉钉扫码登录（PC端轮询模式） ==========
 
     /**
