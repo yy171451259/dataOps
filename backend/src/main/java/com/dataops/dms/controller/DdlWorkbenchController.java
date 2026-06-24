@@ -312,7 +312,7 @@ public class DdlWorkbenchController {
 
     private Connection getConnection(DatabaseInstance db, String schemaName) throws Exception {
         String effectiveSchema = (schemaName != null && !schemaName.isEmpty()) ? schemaName : db.getDefaultSchemaName();
-        String url = String.format("jdbc:mysql://%s:%d/%s?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false",
+        String url = String.format("jdbc:mysql://%s:%d/%s?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&zeroDateTimeBehavior=convertToNull",
                 db.getHost(), db.getPort() != null ? db.getPort() : 3306, effectiveSchema);
         Properties props = new Properties();
         props.put("user", db.getUsername());

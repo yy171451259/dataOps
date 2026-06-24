@@ -27,7 +27,7 @@ public class SqlDialect {
                 return String.format("jdbc:oracle:thin:@%s:%d:%s", host, port, dbName != null ? dbName : "ORCL");
             default: // mysql
                 return String.format(
-                    "jdbc:mysql://%s:%d/%s?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowMultiQueries=true",
+                    "jdbc:mysql://%s:%d/%s?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowMultiQueries=true&zeroDateTimeBehavior=convertToNull",
                     host, port, dbName != null ? dbName : "");
         }
     }
@@ -45,7 +45,7 @@ public class SqlDialect {
                     db.getDefaultSchemaName() != null ? db.getDefaultSchemaName() : "ORCL");
             default:
                 return String.format(
-                    "jdbc:mysql://%s:%d?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false",
+                    "jdbc:mysql://%s:%d?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&zeroDateTimeBehavior=convertToNull",
                     host, port);
         }
     }

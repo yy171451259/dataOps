@@ -1,0 +1,227 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e53]:
+    - complementary [ref=e54]:
+      - generic [ref=e56]:
+        - generic [ref=e57]:
+          - generic [ref=e58]: DataOps DMS
+          - img "menu-fold" [ref=e60] [cursor=pointer]:
+            - img [ref=e61]
+        - menu [ref=e64]:
+          - menuitem "dashboard 工作台" [ref=e65] [cursor=pointer]:
+            - generic [ref=e66]:
+              - img "dashboard" [ref=e67]:
+                - img [ref=e68]
+              - text: 工作台
+          - menuitem "file-search SQL查询" [ref=e70] [cursor=pointer]:
+            - generic [ref=e71]:
+              - img "file-search" [ref=e72]:
+                - img [ref=e73]
+              - text: SQL查询
+          - menuitem "check-square 数据变更" [ref=e75] [cursor=pointer]:
+            - generic [ref=e76]:
+              - img "check-square" [ref=e77]:
+                - img [ref=e78]
+              - text: 数据变更
+          - menuitem "build 结构设计" [ref=e81] [cursor=pointer]:
+            - generic [ref=e82]:
+              - img "build" [ref=e83]:
+                - img [ref=e84]
+              - text: 结构设计
+          - menuitem "database 实例管理" [ref=e86] [cursor=pointer]:
+            - generic [ref=e87]:
+              - img "database" [ref=e88]:
+                - img [ref=e89]
+              - text: 实例管理
+          - menuitem "import 数据导入" [ref=e91] [cursor=pointer]:
+            - generic [ref=e92]:
+              - img "import" [ref=e93]:
+                - img [ref=e94]
+              - text: 数据导入
+          - menuitem "line-chart 性能监控" [ref=e96] [cursor=pointer]:
+            - generic [ref=e97]:
+              - img "line-chart" [ref=e98]:
+                - img [ref=e99]
+              - text: 性能监控
+          - menuitem "send 权限申请" [ref=e101] [cursor=pointer]:
+            - generic [ref=e102]:
+              - img "send" [ref=e103]:
+                - img [ref=e104]
+              - text: 权限申请
+          - generic [ref=e107] [cursor=pointer]:
+            - img "safety" [ref=e108]:
+              - img [ref=e109]
+            - text: 安全管理
+          - generic [ref=e113] [cursor=pointer]:
+            - img "setting" [ref=e114]:
+              - img [ref=e115]
+            - text: 系统管理
+        - generic [ref=e118] [cursor=pointer]:
+          - generic [ref=e119]:
+            - img "user" [ref=e121]:
+              - img [ref=e122]
+            - generic [ref=e124]: 超级管理员
+          - generic [ref=e126]:
+            - img "bell" [ref=e127]:
+              - img [ref=e128]
+            - superscript [ref=e130]:
+              - paragraph [ref=e132]: "6"
+    - main [ref=e134]:
+      - generic [ref=e135]:
+        - tablist [ref=e136]:
+          - tab "数据看板" [selected] [ref=e140] [cursor=pointer]
+        - generic:
+          - generic:
+            - tabpanel "数据看板"
+      - generic [ref=e144]:
+        - generic [ref=e146]:
+          - generic [ref=e147]: 待我审批
+          - button "reload 刷新" [ref=e149] [cursor=pointer]:
+            - img "reload" [ref=e150]:
+              - img [ref=e151]
+            - generic [ref=e153]: 刷新
+        - generic [ref=e157]:
+          - table [ref=e161]:
+            - rowgroup [ref=e168]:
+              - row "类型 申请内容 申请人 申请时间 操作" [ref=e169]:
+                - columnheader "类型" [ref=e170]
+                - columnheader "申请内容" [ref=e171]
+                - columnheader "申请人" [ref=e172]
+                - columnheader "申请时间" [ref=e173]
+                - columnheader "操作" [ref=e174]
+            - rowgroup [ref=e175]:
+              - row "权限申请 homeplus-sit/activity (-) 超级管理员 - check 通过 close 拒绝 eye 查看" [ref=e176]:
+                - cell "权限申请" [ref=e177]:
+                  - generic [ref=e178]: 权限申请
+                - cell "homeplus-sit/activity (-)" [ref=e179]
+                - cell "超级管理员" [ref=e180]
+                - cell "-" [ref=e181]
+                - cell "check 通过 close 拒绝 eye 查看" [ref=e182]:
+                  - generic [ref=e183]:
+                    - button "check 通过" [ref=e185] [cursor=pointer]:
+                      - img "check" [ref=e186]:
+                        - img [ref=e187]
+                      - generic [ref=e189]: 通过
+                    - button "close 拒绝" [ref=e191] [cursor=pointer]:
+                      - img "close" [ref=e192]:
+                        - img [ref=e193]
+                      - generic [ref=e195]: 拒绝
+                    - button "eye 查看" [ref=e197] [cursor=pointer]:
+                      - img "eye" [ref=e198]:
+                        - img [ref=e199]
+                      - generic [ref=e201]: 查看
+              - row "权限申请 homeplus-sit/aptfin (-) 超级管理员 - check 通过 close 拒绝 eye 查看" [ref=e202]:
+                - cell "权限申请" [ref=e203]:
+                  - generic [ref=e204]: 权限申请
+                - cell "homeplus-sit/aptfin (-)" [ref=e205]
+                - cell "超级管理员" [ref=e206]
+                - cell "-" [ref=e207]
+                - cell "check 通过 close 拒绝 eye 查看" [ref=e208]:
+                  - generic [ref=e209]:
+                    - button "check 通过" [ref=e211] [cursor=pointer]:
+                      - img "check" [ref=e212]:
+                        - img [ref=e213]
+                      - generic [ref=e215]: 通过
+                    - button "close 拒绝" [ref=e217] [cursor=pointer]:
+                      - img "close" [ref=e218]:
+                        - img [ref=e219]
+                      - generic [ref=e221]: 拒绝
+                    - button "eye 查看" [ref=e223] [cursor=pointer]:
+                      - img "eye" [ref=e224]:
+                        - img [ref=e225]
+                      - generic [ref=e227]: 查看
+              - row "权限申请 homeplus-dev/aptbc (-) 0142429，杨湘远 - check 通过 close 拒绝 eye 查看" [ref=e228]:
+                - cell "权限申请" [ref=e229]:
+                  - generic [ref=e230]: 权限申请
+                - cell "homeplus-dev/aptbc (-)" [ref=e231]
+                - cell "0142429，杨湘远" [ref=e232]
+                - cell "-" [ref=e233]
+                - cell "check 通过 close 拒绝 eye 查看" [ref=e234]:
+                  - generic [ref=e235]:
+                    - button "check 通过" [ref=e237] [cursor=pointer]:
+                      - img "check" [ref=e238]:
+                        - img [ref=e239]
+                      - generic [ref=e241]: 通过
+                    - button "close 拒绝" [ref=e243] [cursor=pointer]:
+                      - img "close" [ref=e244]:
+                        - img [ref=e245]
+                      - generic [ref=e247]: 拒绝
+                    - button "eye 查看" [ref=e249] [cursor=pointer]:
+                      - img "eye" [ref=e250]:
+                        - img [ref=e251]
+                      - generic [ref=e253]: 查看
+              - row "权限申请 homeplus-sit (-) 0142429，杨湘远 - check 通过 close 拒绝 eye 查看" [ref=e254]:
+                - cell "权限申请" [ref=e255]:
+                  - generic [ref=e256]: 权限申请
+                - cell "homeplus-sit (-)" [ref=e257]
+                - cell "0142429，杨湘远" [ref=e258]
+                - cell "-" [ref=e259]
+                - cell "check 通过 close 拒绝 eye 查看" [ref=e260]:
+                  - generic [ref=e261]:
+                    - button "check 通过" [ref=e263] [cursor=pointer]:
+                      - img "check" [ref=e264]:
+                        - img [ref=e265]
+                      - generic [ref=e267]: 通过
+                    - button "close 拒绝" [ref=e269] [cursor=pointer]:
+                      - img "close" [ref=e270]:
+                        - img [ref=e271]
+                      - generic [ref=e273]: 拒绝
+                    - button "eye 查看" [ref=e275] [cursor=pointer]:
+                      - img "eye" [ref=e276]:
+                        - img [ref=e277]
+                      - generic [ref=e279]: 查看
+              - row "权限申请 homeplus-dev/activity (-) 0142429，杨湘远 - check 通过 close 拒绝 eye 查看" [ref=e280]:
+                - cell "权限申请" [ref=e281]:
+                  - generic [ref=e282]: 权限申请
+                - cell "homeplus-dev/activity (-)" [ref=e283]
+                - cell "0142429，杨湘远" [ref=e284]
+                - cell "-" [ref=e285]
+                - cell "check 通过 close 拒绝 eye 查看" [ref=e286]:
+                  - generic [ref=e287]:
+                    - button "check 通过" [ref=e289] [cursor=pointer]:
+                      - img "check" [ref=e290]:
+                        - img [ref=e291]
+                      - generic [ref=e293]: 通过
+                    - button "close 拒绝" [ref=e295] [cursor=pointer]:
+                      - img "close" [ref=e296]:
+                        - img [ref=e297]
+                      - generic [ref=e299]: 拒绝
+                    - button "eye 查看" [ref=e301] [cursor=pointer]:
+                      - img "eye" [ref=e302]:
+                        - img [ref=e303]
+                      - generic [ref=e305]: 查看
+              - row "权限申请 homeplus-dev/aptbc (-) 0142429，杨湘远 - check 通过 close 拒绝 eye 查看" [ref=e306]:
+                - cell "权限申请" [ref=e307]:
+                  - generic [ref=e308]: 权限申请
+                - cell "homeplus-dev/aptbc (-)" [ref=e309]
+                - cell "0142429，杨湘远" [ref=e310]
+                - cell "-" [ref=e311]
+                - cell "check 通过 close 拒绝 eye 查看" [ref=e312]:
+                  - generic [ref=e313]:
+                    - button "check 通过" [ref=e315] [cursor=pointer]:
+                      - img "check" [ref=e316]:
+                        - img [ref=e317]
+                      - generic [ref=e319]: 通过
+                    - button "close 拒绝" [ref=e321] [cursor=pointer]:
+                      - img "close" [ref=e322]:
+                        - img [ref=e323]
+                      - generic [ref=e325]: 拒绝
+                    - button "eye 查看" [ref=e327] [cursor=pointer]:
+                      - img "eye" [ref=e328]:
+                        - img [ref=e329]
+                      - generic [ref=e331]: 查看
+          - list [ref=e332]:
+            - listitem [ref=e333]: 共 6 条待审批
+            - listitem "Previous Page" [ref=e334]:
+              - button "left" [disabled] [ref=e335]:
+                - img "left" [ref=e336]:
+                  - img [ref=e337]
+            - listitem "1" [ref=e339] [cursor=pointer]:
+              - generic [ref=e340]: "1"
+            - listitem "Next Page" [ref=e341]:
+              - button "right" [disabled] [ref=e342]:
+                - img "right" [ref=e343]:
+                  - img [ref=e344]
+  - generic [ref=e347]:
+    - img "check-circle" [ref=e348]:
+      - img [ref=e349]
+    - text: 登录成功

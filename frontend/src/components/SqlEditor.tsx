@@ -591,6 +591,9 @@ const SqlEditor: React.FC<SqlEditorProps> = () => {
 
   const completionDisposableRef = useRef<any>(null);
 
+  // 动态计算的表格滚动高度
+  const [tableScrollHeight, setTableScrollHeight] = useState<number | string>(400);
+
 
 
   const [activeResultKey, setActiveResultKey] = useState<string>('my-sql');
@@ -955,14 +958,17 @@ const SqlEditor: React.FC<SqlEditorProps> = () => {
   const currentDatabase = databases.find((db: any) => db.id === activeTabData?.databaseId);
 
   useEffect(() => {
-    const el = resultTableRef.current;
-    if (!el) return;
-    const updateHeight = () => setTableScrollY(el.clientHeight);
-    updateHeight();
-    const ro = new ResizeObserver(updateHeight);
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, []);
+    const measure = () => {
+      const el = resultTableRef.current;
+      if (!el) return;
+      const h = el.clientHeight;
+      if (h > 0) setTableScrollY(h);
+    };
+    const id = setTimeout(measure, 50);
+    const ro = new ResizeObserver(measure);
+    if (resultTableRef.current) ro.observe(resultTableRef.current);
+    return () => { clearTimeout(id); ro.disconnect(); };
+  }, [resultViewMode, activeResultIdx, activeTab]);
 
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
@@ -982,6 +988,85 @@ const SqlEditor: React.FC<SqlEditorProps> = () => {
       document.removeEventListener('mouseup', handleMouseUp);
     };
   }, []);
+
+  // 监听结果面板高度变化，动态计算表格滚动高度
+  useEffect(() => {
+    const updateTableHeight = () => {
+      if (!resultContainerRef.current) return;
+      
+      const containerHeight = resultContainerRef.current.clientHeight;
+      // 减去工具栏高度（约36px）
+      const toolbarHeight = 36;
+      // 计算表格可用高度，保留至少100px给滚动条区域
+      const calculatedHeight = Math.max(100, containerHeight - toolbarHeight);
+      
+      setTableScrollHeight(calculatedHeight);
+    };
+    
+    // 初始化
+    updateTableHeight();
+    
+    // 使用 ResizeObserver 监听容器大小变化
+    const observer = new ResizeObserver(() => {
+      // 延迟一点执行，确保 DOM 已更新
+      requestAnimationFrame(() => {
+        updateTableHeight();
+      });
+    });
+    
+    if (resultContainerRef.current) {
+      observer.observe(resultContainerRef.current);
+    }
+    
+    return () => {
+      observer.disconnect();
+    };
+  }, [activeResultKey, currentResults?.length]); // 当切换结果标签页或结果数据变化时重新计算
+
+  // 修复表格滚动条 - 确保水平滚动条始终可见
+  useEffect(() => {
+    const fixTableScrollbar = () => {
+      if (!tableRef.current) return;
+      
+      const tableElement = tableRef.current.nativeElement || tableRef.current;
+      if (!tableElement) return;
+      
+      // 查找表格的所有滚动容器
+      const scrollContainers = [
+        tableElement.querySelector('.ant-table-body'),
+        tableElement.querySelector('.ant-table-content'),
+      ].filter(Boolean);
+      
+      scrollContainers.forEach(container => {
+        if (container) {
+          // 关键：移除垂直滚动，只保留水平滚动
+          (container as HTMLElement).style.overflowX = 'auto';
+          (container as HTMLElement).style.overflowY = 'hidden';
+        }
+      });
+    };
+    
+    // 延迟执行，等待表格渲染
+    const timer = setTimeout(fixTableScrollbar, 300);
+    
+    // 监听数据变化
+    const observer = new MutationObserver(() => {
+      clearTimeout(timer);
+      setTimeout(fixTableScrollbar, 200);
+    });
+    
+    if (tableRef.current) {
+      const tableElement = tableRef.current.nativeElement || tableRef.current;
+      if (tableElement) {
+        observer.observe(tableElement, { childList: true, subtree: true });
+      }
+    }
+    
+    return () => {
+      clearTimeout(timer);
+      observer.disconnect();
+    };
+  }, [currentResults?.length, activeResultIdx]);
 
   // 表结构查看器
 
@@ -1330,34 +1415,23 @@ const SqlEditor: React.FC<SqlEditorProps> = () => {
     <>
       {/* 强制注入滚动条样式 */}
       <style>{`
+        .result-table-wrapper .ant-table-body {
+          overflow: auto !important;
+        }
         .result-table-wrapper .ant-table-body::-webkit-scrollbar {
-          height: 18px !important;
-          width: 16px !important;
+          height: 14px !important;
+          width: 10px !important;
         }
         .result-table-wrapper .ant-table-body::-webkit-scrollbar-track {
-          background: #c0c0c0 !important;
-          border-radius: 8px !important;
+          background: #e8e8e8 !important;
+          border-radius: 4px !important;
         }
         .result-table-wrapper .ant-table-body::-webkit-scrollbar-thumb {
-          background: #505050 !important;
-          border-radius: 8px !important;
-          border: 3px solid #d0d0d0 !important;
+          background: #555 !important;
+          border-radius: 4px !important;
         }
         .result-table-wrapper .ant-table-body::-webkit-scrollbar-thumb:hover {
-          background: #303030 !important;
-        }
-        .result-table-wrapper .ant-table-body::-webkit-scrollbar-thumb:horizontal {
-          background: #484848 !important;
-          border: 3px solid #d8d8d8 !important;
-        }
-        .result-table-wrapper .ant-table-body::-webkit-scrollbar-thumb:horizontal:hover {
-          background: #282828 !important;
-        }
-        .result-table-wrapper .ant-table-body::-webkit-scrollbar-track:horizontal {
-          background: #b8b8b8 !important;
-        }
-        .result-table-wrapper * {
-          scrollbar-color: #505050 #c0c0c0;
+          background: #222 !important;
         }
       `}</style>
       <div style={{ display: 'flex', flexDirection: 'column', height: '100%', width: '100%', background: '#f5f5f5', overflow: 'hidden' }}>
@@ -1730,71 +1804,70 @@ const SqlEditor: React.FC<SqlEditorProps> = () => {
 
                     {resultViewMode === 'grid' ? (
 
-                      <div ref={resultTableRef} className="result-table-wrapper" style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+                      <div ref={resultTableRef} className="result-table-wrapper" style={{ 
+                        flex: 1, 
+                        overflow: 'hidden',
+                        minHeight: 0
+                      }}>
+                          <Table
+                            ref={tableRef}
+                            className="sql-result-table-no-arrows"
+                            columns={[
+                              {
+                                title: '#',
+                                key: '_row_num',
+                                width: 50,
+                                fixed: 'left' as const,
+                                align: 'center' as const,
+                                render: (_: any, __: any, index: number) => (
+                                  <span style={{ color: '#333', fontSize: 11 }}>{index + 1}</span>
+                                ),
+                              },
+                              ...cols.map((col: string) => ({
+                                title: (
+                                  <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+                                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{col}</span>
+                                    <div
+                                      style={{ position: 'absolute', right: -8, top: -8, bottom: -8, width: 16, cursor: 'col-resize', zIndex: 1 }}
+                                      onMouseDown={(e: React.MouseEvent) => {
+                                        e.stopPropagation();
+                                        e.preventDefault();
+                                        resizeRef.current = {
+                                          col,
+                                          startX: e.clientX,
+                                          startWidth: columnWidths[col] || Math.max(120, col.length * 12),
+                                        };
+                                        document.body.style.cursor = 'col-resize';
+                                        document.body.style.userSelect = 'none';
+                                      }}
+                                    />
+                                  </div>
+                                ),
+                                dataIndex: col,
+                                key: col,
+                                ellipsis: true,
+                                width: columnWidths[col] || Math.max(120, col.length * 12),
+                              })),
+                            ]}
+                            dataSource={rows.map((row: any, idx: number) => ({ ...row, _key: idx }))}
+                            onRow={(record: any) => ({
+                              onClick: () => setSelectedRowKey(record._key === selectedRowKey ? null : record._key),
+                              style: record._key === selectedRowKey ? { backgroundColor: '#b7d6f5' } : {},
+                            })}
+                            rowKey="_key"
 
-                        <Table
-                          ref={tableRef}
-                          columns={[
-                            {
-                              title: '#',
-                              key: '_row_num',
-                              width: 50,
-                              minWidth: 50,
-                              fixed: 'left' as const,
-                              align: 'center' as const,
-                              render: (_: any, __: any, index: number) => (
-                                <span style={{ color: '#333', fontSize: 11 }}>{index + 1}</span>
-                              ),
-                            },
-                            ...cols.map((col: string) => ({
-                              title: (
-                                <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
-                                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{col}</span>
-                                  <div
-                                    style={{ position: 'absolute', right: -8, top: -8, bottom: -8, width: 16, cursor: 'col-resize', zIndex: 1 }}
-                                    onMouseDown={(e: React.MouseEvent) => {
-                                      e.stopPropagation();
-                                      e.preventDefault();
-                                      resizeRef.current = {
-                                        col,
-                                        startX: e.clientX,
-                                        startWidth: columnWidths[col] || Math.max(120, col.length * 12),
-                                      };
-                                      document.body.style.cursor = 'col-resize';
-                                      document.body.style.userSelect = 'none';
-                                    }}
-                                  />
-                                </div>
-                              ),
-                              dataIndex: col,
-                              key: col,
-                              ellipsis: true,
-                              width: columnWidths[col] || Math.max(120, col.length * 12),
-                            })),
-                          ]}
-                          dataSource={rows.map((row: any, idx: number) => ({ ...row, _key: idx }))}
-                          onRow={(record: any) => ({
-                            onClick: () => setSelectedRowKey(record._key === selectedRowKey ? null : record._key),
-                            style: record._key === selectedRowKey ? { backgroundColor: '#b7d6f5' } : {},
-                          })}
-                          rowKey="_key"
+                            size="small"
 
-                          size="small"
+                            pagination={false}
+                            virtual
+                            scroll={{ 
+                              x: 50 + cols.reduce((sum: number, col: string) => sum + (columnWidths[col] || Math.max(120, col.length * 12)), 0),
+                              y: tableScrollY - 39,
+                            }}
 
-                          pagination={false}
-                          scroll={{ x: 50 + cols.reduce((sum: number, col: string) => sum + (columnWidths[col] || Math.max(120, col.length * 12)), 0), y: tableScrollY - 20, scrollToFirstRowOnChange: false }}
+                            bordered
 
-                          bordered
-                          
-                          onChange={(pagination, filters, sorter, extra) => {
-                            // 检测是否需要显示水平滚动条
-                            if (extra.action === 'scroll') {
-                              const scrollLeft = (extra as any).scrollLeft || 0;
-                              setHorizontalScrollPos(scrollLeft);
-                            }
-                          }}
-
-                        />
+                          />
 
                       </div>
 

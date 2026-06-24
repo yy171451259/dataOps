@@ -1,0 +1,149 @@
+- generic [ref=e1]:
+  - generic [ref=e3]:
+    - complementary [ref=e4]:
+      - generic [ref=e6]:
+        - generic [ref=e7]:
+          - generic [ref=e8]: DataOps DMS
+          - img "menu-fold" [ref=e10] [cursor=pointer]:
+            - img [ref=e11]
+        - menu [ref=e14]:
+          - menuitem "dashboard 工作台" [ref=e15] [cursor=pointer]:
+            - generic [ref=e16]:
+              - img "dashboard" [ref=e17]:
+                - img [ref=e18]
+              - text: 工作台
+          - menuitem "file-search SQL查询" [active] [ref=e20] [cursor=pointer]:
+            - generic [ref=e21]:
+              - img "file-search" [ref=e22]:
+                - img [ref=e23]
+              - text: SQL查询
+          - menuitem "check-square 数据变更" [ref=e25] [cursor=pointer]:
+            - generic [ref=e26]:
+              - img "check-square" [ref=e27]:
+                - img [ref=e28]
+              - text: 数据变更
+          - menuitem "build 结构设计" [ref=e31] [cursor=pointer]:
+            - generic [ref=e32]:
+              - img "build" [ref=e33]:
+                - img [ref=e34]
+              - text: 结构设计
+          - menuitem "database 实例管理" [ref=e36] [cursor=pointer]:
+            - generic [ref=e37]:
+              - img "database" [ref=e38]:
+                - img [ref=e39]
+              - text: 实例管理
+          - menuitem "import 数据导入" [ref=e41] [cursor=pointer]:
+            - generic [ref=e42]:
+              - img "import" [ref=e43]:
+                - img [ref=e44]
+              - text: 数据导入
+          - menuitem "line-chart 性能监控" [ref=e46] [cursor=pointer]:
+            - generic [ref=e47]:
+              - img "line-chart" [ref=e48]:
+                - img [ref=e49]
+              - text: 性能监控
+          - menuitem "send 权限申请" [ref=e51] [cursor=pointer]:
+            - generic [ref=e52]:
+              - img "send" [ref=e53]:
+                - img [ref=e54]
+              - text: 权限申请
+          - generic [ref=e57] [cursor=pointer]:
+            - img "safety" [ref=e58]:
+              - img [ref=e59]
+            - text: 安全管理
+          - generic [ref=e63] [cursor=pointer]:
+            - img "setting" [ref=e64]:
+              - img [ref=e65]
+            - text: 系统管理
+        - generic [ref=e68] [cursor=pointer]:
+          - generic [ref=e69]:
+            - img "user" [ref=e71]:
+              - img [ref=e72]
+            - generic [ref=e74]: 超级管理员
+          - generic [ref=e76]:
+            - img "bell" [ref=e77]:
+              - img [ref=e78]
+            - superscript [ref=e80]:
+              - paragraph [ref=e82]: "6"
+    - main [ref=e84]:
+      - generic [ref=e85]:
+        - tablist [ref=e86]:
+          - generic [ref=e88]:
+            - tab "数据看板" [ref=e90] [cursor=pointer]
+            - tab "SQL查询" [selected] [ref=e297] [cursor=pointer]
+        - generic:
+          - generic:
+            - tabpanel "SQL查询"
+      - generic [ref=e300]:
+        - generic [ref=e303]:
+          - generic [ref=e304]:
+            - img "database" [ref=e305]:
+              - img [ref=e306]
+            - generic [ref=e308]: 数据库导航器
+          - generic [ref=e310]:
+            - img "search" [ref=e312]:
+              - img [ref=e313]
+            - textbox "搜索数据库、表、字段..." [ref=e315]
+          - tree [ref=e318]:
+            - generic:
+              - textbox "for screen reader"
+            - generic [ref=e322]:
+              - generic [ref=e323]:
+                - img "caret-down" [ref=e325] [cursor=pointer]:
+                  - img [ref=e326]
+                - generic [ref=e331] [cursor=pointer]: homeplus-sit (192.168.16.163:3326)
+              - generic [ref=e332]:
+                - img "caret-down" [ref=e334] [cursor=pointer]:
+                  - img [ref=e335]
+                - generic [ref=e340] [cursor=pointer]: homeplus-dev (192.168.16.163:3325)
+          - generic [ref=e341]: "双击列名: 插入编辑器"
+        - generic [ref=e342]:
+          - button "play-circle" [ref=e343] [cursor=pointer]:
+            - img "play-circle" [ref=e344]:
+              - img [ref=e345]
+          - button "experiment" [ref=e348] [cursor=pointer]:
+            - img "experiment" [ref=e349]:
+              - img [ref=e350]
+          - button "format-painter" [ref=e352] [cursor=pointer]:
+            - img "format-painter" [ref=e353]:
+              - img [ref=e354]
+          - separator [ref=e356]
+          - button "copy" [ref=e357] [cursor=pointer]:
+            - img "copy" [ref=e358]:
+              - img [ref=e359]
+        - generic [ref=e361]:
+          - code [ref=e366]:
+            - generic [ref=e367]:
+              - textbox "Editor content" [ref=e368]
+              - textbox [ref=e369]
+          - generic [ref=e382]:
+            - generic [ref=e384]:
+              - tablist [ref=e385]:
+                - tab "我的SQL" [selected] [ref=e389] [cursor=pointer]
+              - generic:
+                - generic:
+                  - tabpanel "我的SQL"
+            - generic [ref=e390]:
+              - generic [ref=e391]:
+                - generic [ref=e392]:
+                  - img "search" [ref=e394]:
+                    - img [ref=e395]
+                  - textbox "Filter..." [ref=e397]
+                - button "star" [ref=e399] [cursor=pointer]:
+                  - img "star" [ref=e400]:
+                    - img [ref=e401]
+                - generic [ref=e403]:
+                  - tablist [ref=e404]:
+                    - generic [ref=e406]:
+                      - tab "收藏" [selected] [ref=e408] [cursor=pointer]
+                      - tab "历史" [ref=e410] [cursor=pointer]
+                  - generic:
+                    - generic:
+                      - tabpanel "收藏"
+              - table [ref=e418]:
+                - rowgroup [ref=e423]:
+                  - row "暂无收藏" [ref=e424]:
+                    - cell "暂无收藏" [ref=e425]
+  - generic [ref=e426]:
+    - alert
+    - alert

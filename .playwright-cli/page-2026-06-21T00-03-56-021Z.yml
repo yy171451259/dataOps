@@ -1,0 +1,28 @@
+- generic [ref=e4]:
+  - generic [ref=e5]:
+    - generic [ref=e6]: 🗄️
+    - heading "DataOps DMS" [level=3] [ref=e7]
+    - paragraph [ref=e8]: 一站式数据管理平台
+    - img "钉钉扫码登录" [ref=e10]
+    - paragraph [ref=e11]:
+      - text: 使用
+      - strong [ref=e12]: 钉钉
+      - text: 扫码登录
+    - paragraph [ref=e13]: 打开钉钉APP扫描二维码
+  - generic [ref=e14]:
+    - generic [ref=e15]:
+      - heading "账号登录" [level=4] [ref=e16]
+      - paragraph [ref=e17]: 使用用户名和密码登录系统
+    - generic [ref=e18]:
+      - generic [ref=e24]:
+        - img "user" [ref=e26]:
+          - img [ref=e27]
+        - textbox "用户名" [ref=e29]
+      - generic [ref=e35]:
+        - img "lock" [ref=e37]:
+          - img [ref=e38]
+        - textbox "密码" [ref=e40]
+        - img "eye-invisible" [ref=e42] [cursor=pointer]:
+          - img [ref=e43]
+      - button "登 录" [ref=e51] [cursor=pointer]:
+        - generic [ref=e52]: 登 录

@@ -71,6 +71,15 @@ body {
   background: #a8a8a8 !important;
 }
 
+/* 针对添加了特定 class 的表格 */
+.sql-result-table-no-arrows .ant-table-body::-webkit-scrollbar-button {
+  display: none !important;
+}
+
+.sql-result-table-no-arrows .ant-table-header::-webkit-scrollbar-button {
+  display: none !important;
+}
+
 /* Firefox 滚动条颜色 */
 .result-table-wrapper,
 .result-table-wrapper .ant-table-body {

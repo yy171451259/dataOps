@@ -197,7 +197,7 @@ public class DataBackupServiceImpl extends ServiceImpl<DataChangeBackupMapper, D
      */
     private Connection getConnection(DatabaseInstance db, String databaseName) throws Exception {
         String dbName = (databaseName != null && !databaseName.isEmpty()) ? databaseName : db.getDefaultSchemaName();
-        String url = String.format("jdbc:mysql://%s:%d/%s?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowMultiQueries=true",
+        String url = String.format("jdbc:mysql://%s:%d/%s?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowMultiQueries=true&zeroDateTimeBehavior=convertToNull",
             db.getHost(), db.getPort() != null ? db.getPort() : 3306, dbName);
         java.util.Properties props = new java.util.Properties();
         props.put("user", db.getUsername());

@@ -217,10 +217,10 @@ public class SqlExecutor {
         
         if ("mysql".equals(type)) {
             if (dbName != null && !dbName.isEmpty()) {
-                return String.format("jdbc:mysql://%s:%d/%s?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowMultiQueries=true",
+                return String.format("jdbc:mysql://%s:%d/%s?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowMultiQueries=true&zeroDateTimeBehavior=convertToNull",
                     host, port != null ? port : 3306, dbName);
             }
-            return String.format("jdbc:mysql://%s:%d?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowMultiQueries=true",
+            return String.format("jdbc:mysql://%s:%d?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowMultiQueries=true&zeroDateTimeBehavior=convertToNull",
                 host, port != null ? port : 3306);
         } else if ("postgresql".equals(type)) {
             if (dbName != null && !dbName.isEmpty()) {

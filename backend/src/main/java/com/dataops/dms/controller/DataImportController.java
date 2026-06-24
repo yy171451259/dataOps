@@ -380,7 +380,7 @@ public class DataImportController {
 
     private Connection getConnection(DatabaseInstance db, String databaseName) throws Exception {
         String dbName = (databaseName != null && !databaseName.isEmpty()) ? databaseName : db.getDefaultSchemaName();
-        String url = String.format("jdbc:mysql://%s:%d/%s?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false",
+        String url = String.format("jdbc:mysql://%s:%d/%s?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&zeroDateTimeBehavior=convertToNull",
                 db.getHost(), db.getPort() != null ? db.getPort() : 3306, dbName);
         Properties props = new Properties();
         props.put("user", db.getUsername());
