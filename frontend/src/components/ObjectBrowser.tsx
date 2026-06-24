@@ -578,14 +578,6 @@ const ObjectBrowser: React.FC<ObjectBrowserProps> = ({
         )}
       </div>
 
-      {/* Bottom Tip */}
-      <div style={{
-        flexShrink: 0, padding: '4px 10px', borderTop: '1px solid #e8e8e8',
-        fontSize: 10, color: '#ccc', textAlign: 'center', background: '#fafafa',
-      }}>
-        Right-click table: view structure / new query | Dbl-click column: insert
-      </div>
-
       {/* 右键菜单 */}
       {contextMenu && (
         <div

@@ -946,9 +946,10 @@ const SqlEditor: React.FC<SqlEditorProps> = () => {
   const [columnWidths, setColumnWidths] = useState<Record<string, number>>({});
   const resizeRef = useRef<{ col: string; startX: number; startWidth: number } | null>(null);
   const resultTableRef = useRef<HTMLDivElement>(null);
-  const tableRef = useRef<any>(null); // Table 组件的 ref
+  const tableRef = useRef<any>(null);
   const [selectedRowKey, setSelectedRowKey] = useState<number | null>(null);
   const [tableScrollY, setTableScrollY] = useState(300);
+  const scrollPositionsRef = useRef<Record<number, number>>({});
   const [textViewRow, setTextViewRow] = useState(0);
   const [horizontalScrollPos, setHorizontalScrollPos] = useState(0);
 
@@ -969,6 +970,29 @@ const SqlEditor: React.FC<SqlEditorProps> = () => {
     if (resultTableRef.current) ro.observe(resultTableRef.current);
     return () => { clearTimeout(id); ro.disconnect(); };
   }, [resultViewMode, activeResultIdx, activeTab]);
+
+  // 持续记录当前页签滚动位置 + 切回时恢复
+  useEffect(() => {
+    const wrapper = resultTableRef.current;
+    if (!wrapper) return;
+    const findHolder = () => wrapper.querySelector('.ant-table-body, .ant-table-tbody-virtual-holder') as HTMLElement | null;
+    // 恢复当前页签的历史位置
+    const restoreId = requestAnimationFrame(() => {
+      const holder = findHolder();
+      if (holder && scrollPositionsRef.current[activeResultIdx]) {
+        holder.scrollTop = scrollPositionsRef.current[activeResultIdx];
+      }
+    });
+    // 定时轮询滚动位置（virtual table 的 scroll 事件不稳定）
+    const interval = setInterval(() => {
+      const holder = findHolder();
+      if (holder) scrollPositionsRef.current[activeResultIdx] = holder.scrollTop;
+    }, 300);
+    return () => {
+      clearInterval(interval);
+      cancelAnimationFrame(restoreId);
+    };
+  }, [activeResultIdx]);
 
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
