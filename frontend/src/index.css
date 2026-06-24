@@ -1,4 +1,4 @@
-﻿* {
+* {
   margin: 0;
   padding: 0;
   box-sizing: border-box;
@@ -11,7 +11,7 @@ body {
   background: #f0f2f5;
 }
 
-/* 滚动条美化 */
+/* 滚动条美化 - 全局默认 */
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;
@@ -24,6 +24,58 @@ body {
 
 ::-webkit-scrollbar-track {
   background: transparent;
+}
+
+/* ========== SQL 查询结果表格滚动条 ========== */
+/* 使用精确的选择器只影响表格区域 */
+
+/* 表格容器的滚动条 */
+.result-table-wrapper::-webkit-scrollbar {
+  height: 16px !important;
+  width: 16px !important;
+}
+
+.result-table-wrapper::-webkit-scrollbar-track {
+  background: #f5f5f5 !important;
+  border-radius: 8px !important;
+}
+
+.result-table-wrapper::-webkit-scrollbar-thumb {
+  background: #c1c1c1 !important;
+  border-radius: 8px !important;
+  border: 3px solid #f5f5f5 !important;
+}
+
+.result-table-wrapper::-webkit-scrollbar-thumb:hover {
+  background: #a8a8a8 !important;
+}
+
+/* Ant Design Table 内部的滚动条 */
+.result-table-wrapper .ant-table-body::-webkit-scrollbar {
+  height: 16px !important;
+  width: 16px !important;
+}
+
+.result-table-wrapper .ant-table-body::-webkit-scrollbar-track {
+  background: #f5f5f5 !important;
+  border-radius: 8px !important;
+}
+
+.result-table-wrapper .ant-table-body::-webkit-scrollbar-thumb {
+  background: #c1c1c1 !important;
+  border-radius: 8px !important;
+  border: 3px solid #f5f5f5 !important;
+}
+
+.result-table-wrapper .ant-table-body::-webkit-scrollbar-thumb:hover {
+  background: #a8a8a8 !important;
+}
+
+/* Firefox 滚动条颜色 */
+.result-table-wrapper,
+.result-table-wrapper .ant-table-body {
+  scrollbar-color: #c1c1c1 #f5f5f5;
+  scrollbar-width: auto;
 }
 
 /* Monaco编辑器容器 */

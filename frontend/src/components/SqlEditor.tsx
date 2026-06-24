@@ -95,6 +95,134 @@ interface SqlEditorProps {
 const MIN_EDITOR_HEIGHT = 150;
 
 
+// ==================== 自定义水平滚动条组件 ====================
+interface CustomHorizontalScrollbarProps {
+  cols: string[];
+  columnWidths: Record<string, number>;
+  containerRef: React.RefObject<HTMLDivElement>;
+  scrollPos: number;
+  onScroll: (pos: number) => void;
+}
+
+const CustomHorizontalScrollbar: React.FC<CustomHorizontalScrollbarProps> = ({
+  cols,
+  columnWidths,
+  containerRef,
+  scrollPos,
+  onScroll,
+}) => {
+  const totalWidth = 50 + cols.reduce((sum, col) => sum + (columnWidths[col] || Math.max(120, col.length * 12)), 0);
+  const [containerWidth, setContainerWidth] = React.useState(0);
+  
+  // 监听容器宽度变化
+  React.useEffect(() => {
+    const updateWidth = () => {
+      const width = containerRef.current?.clientWidth || 0;
+      setContainerWidth(width);
+    };
+    updateWidth();
+    
+    const resizeObserver = new ResizeObserver(updateWidth);
+    if (containerRef.current) {
+      resizeObserver.observe(containerRef.current);
+    }
+    
+    return () => resizeObserver.disconnect();
+  }, [containerRef]);
+  
+  const needsScrollbar = totalWidth > containerWidth && containerWidth > 0;
+  
+  if (!needsScrollbar) return null;
+  
+  const scrollbarWidth = Math.max(100, (containerWidth / totalWidth) * containerWidth);
+  const maxScroll = totalWidth - containerWidth;
+  const scrollPercent = maxScroll > 0 ? Math.min(1, Math.max(0, scrollPos / maxScroll)) : 0;
+  const thumbPosition = scrollPercent * (containerWidth - scrollbarWidth);
+  
+  // 设置表格滚动位置
+  const setTableScroll = (newScrollPos: number) => {
+    // 通过 tableRef 查找滚动容器
+    if (tableRef.current) {
+      const tableElement = tableRef.current.nativeElement || tableRef.current;
+      // 查找所有可能的滚动容器
+      const scrollContainers = [
+        tableElement?.querySelector('.ant-table-body'),
+        tableElement?.querySelector('.ant-table-content'),
+        tableElement?.querySelector('.ant-table-scroll'),
+      ].filter(Boolean);
+      
+      // 设置所有容器的 scrollLeft
+      scrollContainers.forEach(container => {
+        if (container && (container as HTMLElement).scrollLeft !== newScrollPos) {
+          (container as HTMLElement).scrollLeft = newScrollPos;
+        }
+      });
+    }
+  };
+  
+  const handleClick = (e: React.MouseEvent) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    const clickX = e.clientX - rect.left;
+    const clickRatio = clickX / rect.width;
+    const newScrollPos = clickRatio * maxScroll;
+    onScroll(newScrollPos);
+    setTableScroll(newScrollPos);
+  };
+  
+  const handleMouseDown = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    const startX = e.clientX;
+    const startLeft = thumbPosition;
+    
+    const onMouseMove = (moveEvent: MouseEvent) => {
+      const deltaX = moveEvent.clientX - startX;
+      const newLeft = Math.max(0, Math.min(containerWidth - scrollbarWidth, startLeft + deltaX));
+      const newScrollPos = (newLeft / (containerWidth - scrollbarWidth)) * maxScroll;
+      onScroll(newScrollPos);
+      setTableScroll(newScrollPos);
+    };
+    
+    const onMouseUp = () => {
+      document.removeEventListener('mousemove', onMouseMove);
+      document.removeEventListener('mouseup', onMouseUp);
+    };
+    
+    document.addEventListener('mousemove', onMouseMove);
+    document.addEventListener('mouseup', onMouseUp);
+  };
+  
+  return (
+    <div
+      style={{
+        height: 20,
+        background: '#e8e8e8',
+        borderTop: '1px solid #d0d0d0',
+        position: 'relative',
+        cursor: 'pointer',
+        flexShrink: 0,
+      }}
+      onClick={handleClick}
+    >
+      <div
+        style={{
+          position: 'absolute',
+          left: thumbPosition,
+          top: 2,
+          height: 16,
+          width: scrollbarWidth,
+          background: 'linear-gradient(to bottom, #606060, #505050)',
+          borderRadius: 8,
+          border: '2px solid #d8d8d8',
+          cursor: 'grab',
+          boxShadow: '0 2px 4px rgba(0,0,0,0.2)',
+        }}
+        onMouseDown={handleMouseDown}
+      />
+    </div>
+  );
+};
+
+
 
 // ==================== 底部面板：我的SQL/收藏/执行历史 ====================
 
@@ -814,7 +942,27 @@ const SqlEditor: React.FC<SqlEditorProps> = () => {
   const [resultViewMode, setResultViewMode] = useState<'grid' | 'text' | 'record'>('grid');
   const [columnWidths, setColumnWidths] = useState<Record<string, number>>({});
   const resizeRef = useRef<{ col: string; startX: number; startWidth: number } | null>(null);
+  const resultTableRef = useRef<HTMLDivElement>(null);
+  const tableRef = useRef<any>(null); // Table 组件的 ref
   const [selectedRowKey, setSelectedRowKey] = useState<number | null>(null);
+  const [tableScrollY, setTableScrollY] = useState(300);
+  const [textViewRow, setTextViewRow] = useState(0);
+  const [horizontalScrollPos, setHorizontalScrollPos] = useState(0);
+
+  // 提前定义这些变量，以便 useEffect 可以使用
+  const currentResults = results[activeTab] || [];
+  const currentResult = currentResults[activeResultIdx];
+  const currentDatabase = databases.find((db: any) => db.id === activeTabData?.databaseId);
+
+  useEffect(() => {
+    const el = resultTableRef.current;
+    if (!el) return;
+    const updateHeight = () => setTableScrollY(el.clientHeight);
+    updateHeight();
+    const ro = new ResizeObserver(updateHeight);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
 
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
@@ -834,10 +982,6 @@ const SqlEditor: React.FC<SqlEditorProps> = () => {
       document.removeEventListener('mouseup', handleMouseUp);
     };
   }, []);
-
-  const [textViewRow, setTextViewRow] = useState(0);
-
-
 
   // 表结构查看器
 
@@ -870,12 +1014,6 @@ const SqlEditor: React.FC<SqlEditorProps> = () => {
       setTableStructureInfo({ tableName, columns: [] });
     }
   };
-
-  const currentResults = results[activeTab] || [];
-
-  const currentResult = currentResults[activeResultIdx];
-
-  const currentDatabase = databases.find((db: any) => db.id === activeTabData?.databaseId);
 
 
   /** 导出辅助：生成文件并触发下载 */
@@ -1189,7 +1327,40 @@ const SqlEditor: React.FC<SqlEditorProps> = () => {
   };
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', width: '100%', background: '#f5f5f5', overflow: 'hidden' }}>
+    <>
+      {/* 强制注入滚动条样式 */}
+      <style>{`
+        .result-table-wrapper .ant-table-body::-webkit-scrollbar {
+          height: 18px !important;
+          width: 16px !important;
+        }
+        .result-table-wrapper .ant-table-body::-webkit-scrollbar-track {
+          background: #c0c0c0 !important;
+          border-radius: 8px !important;
+        }
+        .result-table-wrapper .ant-table-body::-webkit-scrollbar-thumb {
+          background: #505050 !important;
+          border-radius: 8px !important;
+          border: 3px solid #d0d0d0 !important;
+        }
+        .result-table-wrapper .ant-table-body::-webkit-scrollbar-thumb:hover {
+          background: #303030 !important;
+        }
+        .result-table-wrapper .ant-table-body::-webkit-scrollbar-thumb:horizontal {
+          background: #484848 !important;
+          border: 3px solid #d8d8d8 !important;
+        }
+        .result-table-wrapper .ant-table-body::-webkit-scrollbar-thumb:horizontal:hover {
+          background: #282828 !important;
+        }
+        .result-table-wrapper .ant-table-body::-webkit-scrollbar-track:horizontal {
+          background: #b8b8b8 !important;
+        }
+        .result-table-wrapper * {
+          scrollbar-color: #505050 #c0c0c0;
+        }
+      `}</style>
+      <div style={{ display: 'flex', flexDirection: 'column', height: '100%', width: '100%', background: '#f5f5f5', overflow: 'hidden' }}>
 
       <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
         {/* 对象浏览器侧边栏 - DBeaver 风格 Database Navigator */}
@@ -1230,7 +1401,7 @@ const SqlEditor: React.FC<SqlEditorProps> = () => {
           display: 'flex', flexDirection: 'column', alignItems: 'center',
           padding: '8px 0', gap: 4, flexShrink: 0,
         }}>
-          <Tooltip title="执行 (Ctrl+Enter)" placement="right">
+          <Tooltip title="执行" placement="right">
             <Button type="text" size="small"
               icon={<PlayCircleOutlined style={{ color: '#52c41a', fontSize: 16 }} />}
               loading={loading} onClick={handleExecute} style={{ padding: '4px 8px' }} />
@@ -1525,7 +1696,7 @@ const SqlEditor: React.FC<SqlEditorProps> = () => {
 
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 12px', borderBottom: '1px solid #eee', background: '#fafafa' }}>
 
-                      <span style={{ fontSize: 11, color: '#999' }}>{rowCount}{currentResult?.hasMore ? '+' : ''} 行 / {cols.length} 列</span>
+                      <span style={{ fontSize: 11, color: '#333' }}>{rowCount}{currentResult?.hasMore ? '+' : ''} 行 / {cols.length} 列</span>
 
                       <Divider type="vertical" style={{ height: 14 }} />
 
@@ -1559,41 +1730,48 @@ const SqlEditor: React.FC<SqlEditorProps> = () => {
 
                     {resultViewMode === 'grid' ? (
 
-                      <div className="result-table-wrapper" style={{ flex: 1, overflow: 'auto' }}>
-                        <style>{`
-                          .result-table-wrapper::-webkit-scrollbar { height: 10px; width: 10px; }
-                          .result-table-wrapper::-webkit-scrollbar-track { background: #f0f0f0; border-radius: 4px; }
-                          .result-table-wrapper::-webkit-scrollbar-thumb { background: #bfbfbf; border-radius: 4px; }
-                          .result-table-wrapper::-webkit-scrollbar-thumb:hover { background: #8c8c8c; }
-                        `}</style>
+                      <div ref={resultTableRef} className="result-table-wrapper" style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
 
                         <Table
-
-                          columns={cols.map((col: string) => ({
-                            title: (
-                              <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
-                                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{col}</span>
-                                <div
-                                  style={{ position: 'absolute', right: -8, top: -8, bottom: -8, width: 16, cursor: 'col-resize', zIndex: 1 }}
-                                  onMouseDown={(e: React.MouseEvent) => {
-                                    e.stopPropagation();
-                                    e.preventDefault();
-                                    resizeRef.current = {
-                                      col,
-                                      startX: e.clientX,
-                                      startWidth: columnWidths[col] || Math.max(120, col.length * 12),
-                                    };
-                                    document.body.style.cursor = 'col-resize';
-                                    document.body.style.userSelect = 'none';
-                                  }}
-                                />
-                              </div>
-                            ),
-                            dataIndex: col,
-                            key: col,
-                            ellipsis: true,
-                            width: columnWidths[col] || Math.max(120, col.length * 12),
-                          }))}
+                          ref={tableRef}
+                          columns={[
+                            {
+                              title: '#',
+                              key: '_row_num',
+                              width: 50,
+                              minWidth: 50,
+                              fixed: 'left' as const,
+                              align: 'center' as const,
+                              render: (_: any, __: any, index: number) => (
+                                <span style={{ color: '#333', fontSize: 11 }}>{index + 1}</span>
+                              ),
+                            },
+                            ...cols.map((col: string) => ({
+                              title: (
+                                <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+                                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{col}</span>
+                                  <div
+                                    style={{ position: 'absolute', right: -8, top: -8, bottom: -8, width: 16, cursor: 'col-resize', zIndex: 1 }}
+                                    onMouseDown={(e: React.MouseEvent) => {
+                                      e.stopPropagation();
+                                      e.preventDefault();
+                                      resizeRef.current = {
+                                        col,
+                                        startX: e.clientX,
+                                        startWidth: columnWidths[col] || Math.max(120, col.length * 12),
+                                      };
+                                      document.body.style.cursor = 'col-resize';
+                                      document.body.style.userSelect = 'none';
+                                    }}
+                                  />
+                                </div>
+                              ),
+                              dataIndex: col,
+                              key: col,
+                              ellipsis: true,
+                              width: columnWidths[col] || Math.max(120, col.length * 12),
+                            })),
+                          ]}
                           dataSource={rows.map((row: any, idx: number) => ({ ...row, _key: idx }))}
                           onRow={(record: any) => ({
                             onClick: () => setSelectedRowKey(record._key === selectedRowKey ? null : record._key),
@@ -1604,10 +1782,17 @@ const SqlEditor: React.FC<SqlEditorProps> = () => {
                           size="small"
 
                           pagination={false}
-                          virtual
-                          scroll={{ x: Math.max(800, cols.length * 150), y: Math.max(200, 300) }}
+                          scroll={{ x: 50 + cols.reduce((sum: number, col: string) => sum + (columnWidths[col] || Math.max(120, col.length * 12)), 0), y: tableScrollY - 20, scrollToFirstRowOnChange: false }}
 
                           bordered
+                          
+                          onChange={(pagination, filters, sorter, extra) => {
+                            // 检测是否需要显示水平滚动条
+                            if (extra.action === 'scroll') {
+                              const scrollLeft = (extra as any).scrollLeft || 0;
+                              setHorizontalScrollPos(scrollLeft);
+                            }
+                          }}
 
                         />
 
@@ -2164,7 +2349,7 @@ const SqlEditor: React.FC<SqlEditorProps> = () => {
       </Modal>
 
     </div>
-
+    </>
   );
 
 };
